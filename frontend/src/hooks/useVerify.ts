@@ -22,10 +22,21 @@ export function useVerify() {
         });
       }
     },
-    onError: (error: any) => {
+    onError: (error: unknown) => {
+      let message = "Failed to verify certificate";
+
+      if (error && typeof error === "object") {
+        const err = error as {
+          response?: { data?: { message?: string } };
+          message?: string;
+        };
+
+        message = err.response?.data?.message || err.message || message;
+      }
+
       toast({
         title: "Verification Error",
-        description: error.response?.data?.message || "Failed to verify certificate",
+        description: message,
         variant: "destructive",
       });
     },

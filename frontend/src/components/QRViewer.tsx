@@ -7,7 +7,7 @@ import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
 interface QRViewerProps {
-  data: string | Record<string, any>;
+  data: string | Record<string, unknown>;
   size?: number;
   title?: string;
   subtitle?: string;
@@ -38,11 +38,13 @@ export function QRViewer({
     const img = new Image();
 
     img.onload = () => {
+      if (!ctx) return;
+
       canvas.width = size * 2;
       canvas.height = size * 2;
-      ctx?.fillStyle && (ctx.fillStyle = '#ffffff');
-      ctx?.fillRect(0, 0, canvas.width, canvas.height);
-      ctx?.drawImage(img, 0, 0, size * 2, size * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, size * 2, size * 2);
       
       const link = document.createElement('a');
       link.download = `qr-code-${Date.now()}.png`;

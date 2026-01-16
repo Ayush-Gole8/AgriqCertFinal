@@ -83,7 +83,6 @@ export default function Profile() {
       
       if (response.data.success) {
         setSuccessMessage('Profile updated successfully');
-        // Optionally refresh user data from localStorage
         const storedUser = localStorage.getItem('agriqcert_user');
         if (storedUser) {
           const updatedUser = JSON.parse(storedUser);

@@ -11,6 +11,8 @@
     "worker": "tsx src/workers/issuanceWorker.ts",
     "dev:all": "concurrently --kill-others \"npm:dev\" \"npm:worker\"",
     "seed": "tsx src/scripts/seed.ts",
+    "create-admin": "tsx src/scripts/createAdmin.ts",
+    "update-admin":"tsx src/scripts/updateAdmin.ts",
     "test": "vitest",
     "test:coverage": "vitest --coverage",
     "lint": "eslint src --ext .ts",
@@ -41,6 +43,7 @@
     "multer": "^1.4.5-lts.1",
     "nanoid": "^5.0.9",
     "qrcode": "^1.5.4",
+    "socket.io": "^4.8.3",
     "uuid": "^11.0.5",
     "zod": "^3.25.76"
   },
@@ -62,7 +65,7 @@
     "prettier": "^3.5.2",
     "tsx": "^4.19.2",
     "typescript": "^5.8.3",
-    "vitest": "^2.1.8"
+    "vitest": "^4.0.17"
   },
   "engines": {
     "node": ">=18.0.0",
