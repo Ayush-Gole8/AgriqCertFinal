@@ -25,7 +25,7 @@ import { QRViewer } from '@/components/QRViewer';
 import { useCertificate } from '@/hooks/useVCS';
 import { useRevokeVC } from '@/hooks/useVCS';
 import { useAuth } from '@/contexts/AuthContext';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 
@@ -329,7 +329,7 @@ export default function CertificateDetail() {
 
         {/* Revoke Modal */}
         <Dialog open={showRevokeModal} onOpenChange={setShowRevokeModal}>
-          <DialogContent>
+          <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle>Revoke Certificate</DialogTitle>
             </DialogHeader>
@@ -353,23 +353,22 @@ export default function CertificateDetail() {
                   </SelectContent>
                 </Select>
               </div>
-              
-              <div className="flex gap-2 justify-end">
-                <Button 
-                  variant="outline" 
-                  onClick={() => setShowRevokeModal(false)}
-                >
-                  Cancel
-                </Button>
-                <Button 
-                  variant="destructive" 
-                  onClick={handleRevoke}
-                  disabled={!revokeReason || revokeVC.isPending}
-                >
-                  {revokeVC.isPending ? 'Revoking...' : 'Revoke Certificate'}
-                </Button>
-              </div>
             </div>
+            <DialogFooter className="mt-4">
+              <Button 
+                variant="outline" 
+                onClick={() => setShowRevokeModal(false)}
+              >
+                Cancel
+              </Button>
+              <Button 
+                variant="destructive" 
+                onClick={handleRevoke}
+                disabled={!revokeReason || revokeVC.isPending}
+              >
+                {revokeVC.isPending ? 'Revoking...' : 'Revoke Certificate'}
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </motion.div>

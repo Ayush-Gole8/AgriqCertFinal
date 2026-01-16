@@ -3,7 +3,9 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": ["ES2023"],
+    "lib": [
+      "ES2023"
+    ],
     "outDir": "./dist",
     "rootDir": "./src",
     "strict": true,
@@ -19,19 +21,44 @@
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
     "allowSyntheticDefaultImports": true,
-    "types": ["node"],
+    "types": [
+      "node"
+    ],
     "baseUrl": "./src",
     "paths": {
-      "@/*": ["./*"],
-      "@/config/*": ["./config/*"],
-      "@/models/*": ["./models/*"],
-      "@/controllers/*": ["./controllers/*"],
-      "@/services/*": ["./services/*"],
-      "@/middleware/*": ["./middleware/*"],
-      "@/utils/*": ["./utils/*"],
-      "@/types/*": ["./types/*"]
+      "@/*": [
+        "./*"
+      ],
+      "@/config/*": [
+        "./config/*"
+      ],
+      "@/models/*": [
+        "./models/*"
+      ],
+      "@/controllers/*": [
+        "./controllers/*"
+      ],
+      "@/services/*": [
+        "./services/*"
+      ],
+      "@/middleware/*": [
+        "./middleware/*"
+      ],
+      "@/utils/*": [
+        "./utils/*"
+      ],
+      "@/types/*": [
+        "./types/*"
+      ]
     }
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "**/*.test.ts"]
+  "include": [
+    "src/**/*",
+    "test"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "**/*.test.ts"
+  ]
 }

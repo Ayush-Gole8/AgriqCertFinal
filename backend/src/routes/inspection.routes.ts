@@ -1,8 +1,8 @@
 import { Router } from 'express';
-import { InspectionController } from '../controllers/InspectionController.js';
-import { authenticate, authorize, canAccessBatch } from '../middleware/auth.js';
-import { validateSchema, validateQuery } from '../middleware/validation.js';
-import { validateObjectId } from '../middleware/paramValidation.js';
+import { InspectionController } from '../controllers/inspection.controller.js';
+import { authenticate, authorize, canAccessBatch } from '../middleware/auth.middleware.js';
+import { validateSchema, validateQuery } from '../validators/requestValidation.validator.js';
+import { validateObjectId } from '../validators/mongoValidation.validator.js';
 import {
   createInspectionSchema,
   updateInspectionSchema,
@@ -21,7 +21,7 @@ router.get('/', validateQuery(inspectionQuerySchema), InspectionController.getIn
 router.get('/:id', validateObjectId(), InspectionController.getInspectionById);
 
 // Create new inspection for a batch
-router.post('/batch/:batchId', 
+router.post('/batch/:batchId',
   validateObjectId('batchId'),
   authorize('qa_inspector', 'admin'),
   validateSchema(createInspectionSchema),

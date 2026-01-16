@@ -1,10 +1,10 @@
 import axios from 'axios';
 import type { AxiosError, AxiosRequestConfig } from 'axios';
-import type { 
-  Batch, 
-  Inspection, 
-  Certificate, 
-  Notification, 
+import type {
+  Batch,
+  Inspection,
+  Certificate,
+  Notification,
   BatchDraft,
   VerificationResult,
   ApiResponse,
@@ -14,26 +14,49 @@ import type {
   UpdateBatchPayload,
   CreateInspectionPayload
 } from '@/types';
-import { 
-  mockBatches, 
-  mockInspections, 
-  mockCertificates, 
-  mockNotifications 
+import {
+  mockBatches,
+  mockInspections,
+  mockCertificates,
+  mockNotifications
 } from './mockData';
 
-// Create axios instance with real backend URL
+const API_BASE_URL = import.meta.env?.VITE_API_BASE_URL || 'http://localhost:5000/api';
+
+const getCookie = (name: string): string | null => {
+  const value = document.cookie.split('; ').find(row => row.startsWith(name + '='));
+  if (!value) return null;
+  return decodeURIComponent(value.split('=')[1] || '');
+};
+
+const setCookie = (name: string, value: string, days: number) => {
+  const expires = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toUTCString();
+  document.cookie = `${name}=${encodeURIComponent(value)}; expires=${expires}; path=/`;
+};
+
+const deleteCookie = (name: string) => {
+  document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
+};
+
+const redirectToLogin = () => {
+  const currentPath = window.location.pathname + window.location.search + window.location.hash;
+  const params = new URLSearchParams();
+  params.set('redirect', currentPath);
+  window.location.href = `/login?${params.toString()}`;
+};
+
 export const apiClient = axios.create({
-  baseURL: (import.meta as any)?.env?.VITE_API_BASE_URL || 'http://localhost:5000/api',
+  baseURL: import.meta.env?.VITE_API_BASE_URL || 'http://localhost:5000/api',
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true,
 });
 
-// Request interceptor to add JWT token
 apiClient.interceptors.request.use(
   (config) => {
-    const accessToken = localStorage.getItem('agriqcert_access_token');
+    const accessToken = getCookie('agriqcert_access_token');
     if (accessToken) {
       config.headers.Authorization = `Bearer ${accessToken}`;
     }
@@ -44,7 +67,6 @@ apiClient.interceptors.request.use(
   }
 );
 
-// Response interceptor to handle token refresh
 let isRefreshing = false;
 type QueueItem = { resolve: (value?: string | null) => void; reject: (reason?: unknown) => void };
 let failedQueue: QueueItem[] = [];
@@ -88,19 +110,20 @@ apiClient.interceptors.response.use(
       originalRequest._retry = true;
       isRefreshing = true;
 
-      const refreshToken = localStorage.getItem('agriqcert_refresh_token');
+      const refreshToken = getCookie('agriqcert_refresh_token');
 
       if (!refreshToken) {
         processQueue(error, null);
         isRefreshing = false;
-        // No refresh token, redirect to login
-        localStorage.clear();
-        window.location.href = '/login';
+        deleteCookie('agriqcert_access_token');
+        deleteCookie('agriqcert_refresh_token');
+        localStorage.removeItem('agriqcert_user');
+        redirectToLogin();
         return Promise.reject(error);
       }
 
       try {
-        const response = await axios.post('http://localhost:5001/api/auth/refresh', {
+        const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {
           refreshToken,
         });
 
@@ -109,8 +132,8 @@ apiClient.interceptors.response.use(
           throw new Error('Invalid refresh response');
         }
 
-        localStorage.setItem('agriqcert_access_token', tokens.accessToken);
-        localStorage.setItem('agriqcert_refresh_token', tokens.refreshToken);
+        setCookie('agriqcert_access_token', tokens.accessToken, 1);
+        setCookie('agriqcert_refresh_token', tokens.refreshToken, 7);
 
         // Process queued requests
         processQueue(null, tokens.accessToken);
@@ -122,12 +145,13 @@ apiClient.interceptors.response.use(
         return apiClient(originalRequest as AxiosRequestConfig);
 
       } catch (refreshError) {
-        // Refresh failed, clear queue and redirect to login
+        deleteCookie('agriqcert_access_token');
+        deleteCookie('agriqcert_refresh_token');
         processQueue(refreshError, null);
         isRefreshing = false;
 
-        localStorage.clear();
-        window.location.href = '/login';
+        localStorage.removeItem('agriqcert_user');
+        redirectToLogin();
         return Promise.reject(refreshError);
       }
     }
@@ -147,17 +171,17 @@ export const api = {
       const response = await apiClient.post('/auth/login', { email, password });
       return response.data;
     },
-    
+
     register: async (email: string, password: string, name: string, role: string) => {
       const response = await apiClient.post('/auth/register', { email, password, name, role });
       return response.data;
     },
-    
+
     logout: async (refreshToken: string) => {
       const response = await apiClient.post('/auth/logout', { refreshToken });
       return response.data;
     },
-    
+
     profile: async () => {
       const response = await apiClient.get('/auth/profile');
       return response.data;
@@ -169,9 +193,9 @@ export const api = {
     },
 
     changePassword: async (currentPassword: string, newPassword: string) => {
-      const response = await apiClient.put('/auth/change-password', { 
-        currentPassword, 
-        newPassword 
+      const response = await apiClient.put('/auth/change-password', {
+        currentPassword,
+        newPassword
       });
       return response.data;
     },
@@ -185,7 +209,7 @@ export const api = {
       if (filters?.farmerId) params.append('farmerId', filters.farmerId);
       if (filters?.page) params.append('page', filters.page.toString());
       if (filters?.limit) params.append('limit', filters.limit.toString());
-      
+
       const response = await apiClient.get(`/batches?${params.toString()}`);
       return response.data.data;
     },
@@ -266,9 +290,9 @@ export const api = {
     get: async (id: string): Promise<ApiResponse<BatchDraft | null>> => {
       await delay(200);
       const stored = localStorage.getItem(`draft_${id}`);
-      return { 
-        success: true, 
-        data: stored ? JSON.parse(stored) : null 
+      return {
+        success: true,
+        data: stored ? JSON.parse(stored) : null
       };
     },
 
@@ -301,7 +325,7 @@ export const api = {
       if (filters?.status) params.append('status', filters.status);
       if (filters?.page) params.append('page', filters.page.toString());
       if (filters?.limit) params.append('limit', filters.limit.toString());
-      
+
       const response = await apiClient.get(`/inspections?${params.toString()}`);
       return response.data.data;
     },
@@ -417,7 +441,7 @@ export const api = {
       const cert = mockCertificates.find(c => c.id === certId);
       const batch = mockBatches.find(b => b.id === cert?.batchId);
       const inspection = mockInspections.find(i => i.batchId === cert?.batchId);
-      
+
       if (!cert) {
         return {
           success: true,

@@ -1,8 +1,8 @@
-import database from '../config/database.js';
-import { User } from '../models/User.js';
-import { Batch } from '../models/Batch.js';
-import { Inspection } from '../models/Inspection.js';
-import config from '../config/index.js';
+import database from '../config/database.config.js';
+import { User } from '../models/user.model.js';
+import { Batch } from '../models/batch.model.js';
+import { Inspection } from '../models/inspection.model.js';
+import config from '../config/config.js';
 
 const seedData = async () => {
   try {
@@ -384,24 +384,24 @@ const seedData = async () => {
     console.log(`   • Certifiers: ${certifiers.length}`);
     console.log(`   • Batches: ${batches.length}`);
     console.log(`   • Inspections: ${inspections.length}\n`);
-    
+
     console.log('🔐 Login Credentials:\n');
     console.log('Admin:');
     console.log(`   Email: ${admin.email}`);
     console.log(`   Password: ${config.admin.password}\n`);
-    
+
     console.log('Sample Farmer:');
     console.log(`   Email: ${farmers[0].email}`);
     console.log(`   Password: Farmer@123\n`);
-    
+
     console.log('Sample Inspector:');
     console.log(`   Email: ${inspectors[0].email}`);
     console.log(`   Password: Inspector@123\n`);
-    
+
     console.log('Sample Certifier:');
     console.log(`   Email: ${certifiers[0].email}`);
     console.log(`   Password: Certifier@123\n`);
-    
+
     console.log('═══════════════════════════════════════\n');
 
     await database.disconnect();

@@ -19,7 +19,7 @@ export const registerSchema = z.object({
     .regex(/[0-9]/, 'Password must contain at least one number')
     .regex(/[@$!%*?&#]/, 'Password must contain at least one special character'),
   name: z.string().min(2, 'Name must be at least 2 characters').max(100),
-  role: z.enum(['farmer', 'qa_inspector', 'certifier', 'admin', 'verifier']).optional(),
+  role: z.enum(['farmer', 'qa_inspector', 'certifier', 'verifier']).optional(),
   organization: z.string().optional(),
   phone: z.string().optional(),
   address: z.string().optional(),
@@ -122,15 +122,43 @@ export const inspectionQuerySchema = z.object({
   inspectorId: objectIdSchema.optional(),
 });
 
-// Certificate schemas
+// Certificate / VC schemas
 export const issueCertificateSchema = z.object({
   batchId: objectIdSchema,
   expiryDays: z.number().positive().optional(),
 });
 
 export const revokeCertificateSchema = z.object({
-  reason: z.string().min(1, 'Revocation reason is required').max(500),
+  reason: z.enum([
+    'compromised_key',
+    'cessation_of_operation',
+    'affiliation_changed',
+    'superseded',
+    'fraud',
+    'quality_issue',
+    'expired_inspection',
+    'administrative',
+    'other',
+  ]),
 });
+
+export const issueVCSchema = z.object({
+  batchId: z.string().min(1, 'Batch ID is required'),
+  inspectionId: z.string().optional(),
+});
+
+export const verifyVCSchema = z
+  .object({
+    vcJson: z.record(z.any()).optional(),
+    vcUrl: z.string().url().optional(),
+    qrPayload: z.string().optional(),
+  })
+  .refine(
+    (data) => data.vcJson || data.vcUrl || data.qrPayload,
+    {
+      message: 'One of vcJson, vcUrl, or qrPayload is required',
+    },
+  );
 
 // Draft schemas
 export const saveDraftSchema = z.object({

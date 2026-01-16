@@ -123,8 +123,13 @@ export const getCertificateByBatch = async (batchId: string): Promise<Certificat
   try {
     const response = await apiClient.get(`/vc/certificates/batch/${batchId}`);
     return response.data.data;
-  } catch (error: any) {
-    if (error?.response?.status === 404) {
+  } catch (error) {
+    if (
+      error &&
+      typeof error === "object" &&
+      "response" in error &&
+      (error as { response?: { status?: number } }).response?.status === 404
+    ) {
       return null;
     }
     throw error;

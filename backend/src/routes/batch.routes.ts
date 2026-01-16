@@ -1,8 +1,8 @@
 import { Router } from 'express';
-import { BatchController } from '../controllers/BatchController.js';
-import { authenticate, authorize, canAccessBatch } from '../middleware/auth.js';
-import { validateSchema, validateQuery } from '../middleware/validation.js';
-import { validateObjectId } from '../middleware/paramValidation.js';
+import { BatchController } from '../controllers/batch.controller.js';
+import { authenticate, authorize, canAccessBatch } from '../middleware/auth.middleware.js';
+import { validateSchema, validateQuery } from '../validators/requestValidation.validator.js';
+import { validateObjectId } from '../validators/mongoValidation.validator.js';
 import {
   createBatchSchema,
   updateBatchSchema,

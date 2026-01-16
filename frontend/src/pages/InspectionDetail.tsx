@@ -129,9 +129,18 @@ export default function InspectionDetail() {
         await createInspection.mutateAsync({ batchId: id, data: inspectionData });
         toast({ title: "Inspection started", description: "Quality inspection has been initiated." });
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('Save progress error:', error);
-      const message = error?.response?.data?.message || error?.message || "Failed to save inspection progress. Please try again.";
+      let message = "Failed to save inspection progress. Please try again.";
+
+      if (error && typeof error === "object") {
+        const err = error as {
+          response?: { data?: { message?: string } };
+          message?: string;
+        };
+
+        message = err.response?.data?.message || err.message || message;
+      }
       toast({ 
         title: "Error", 
         description: message,
@@ -187,9 +196,18 @@ export default function InspectionDetail() {
       });
       
       navigate('/inspections');
-    } catch (error: any) {
+    } catch (error) {
       console.error('Complete inspection error:', error);
-      const message = error?.response?.data?.message || error?.message || "Failed to complete inspection. Please try again.";
+      let message = "Failed to complete inspection. Please try again.";
+
+      if (error && typeof error === "object") {
+        const err = error as {
+          response?: { data?: { message?: string } };
+          message?: string;
+        };
+
+        message = err.response?.data?.message || err.message || message;
+      }
       toast({ 
         title: "Error", 
         description: message,
