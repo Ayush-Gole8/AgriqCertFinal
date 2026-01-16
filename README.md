@@ -72,8 +72,8 @@ AgriQCert/
 │   │   ├── routes/             # API endpoints
 │   │   ├── middleware/         # Auth & validation
 │   │   ├── services/           # Business logic
-│   │   │   ├── injiClient.ts   # Inji API integration
-│   │   │   └── verifyService.ts # VC verification
+│   │   │   ├── injiClient.service.ts   # Inji API integration
+│   │   │   └── verify.service.ts       # VC verification
 │   │   ├── workers/            # Background workers
 │   │   ├── validators/         # Zod schemas
 │   │   └── utils/              # Helper functions
@@ -191,15 +191,25 @@ PORT=5000
 
 # Database
 MONGODB_URI=mongodb://localhost:27017/agriqcert
+MONGODB_TEST_URI=mongodb://localhost:27017/agriqcert_test
 
 # JWT Configuration
 JWT_SECRET=your-super-secret-jwt-key-change-in-production-min-32-chars
 JWT_REFRESH_SECRET=your-super-secret-refresh-key-change-in-production-min-32-chars
+JWT_EXPIRES_IN=15m
+JWT_REFRESH_EXPIRES_IN=7d
 
-# Inji Configuration (Optional - uses mock by default)
-INJI_BASE_URL=https://api.inji.io
+# Inji Configuration (optional - uses mock by default)
+INJI_API_URL=https://api.inji.io
 INJI_API_KEY=your-inji-api-key
+INJI_ISSUER_DID=did:example:agriqcert
+INJI_WEBHOOK_SECRET=change-me
 INJI_MOCK_MODE=true
+
+# Admin bootstrap user
+ADMIN_EMAIL=admin@agriqcert.com
+ADMIN_PASSWORD=Admin@123456
+ADMIN_NAME=System Administrator
 
 # File Upload
 MAX_FILE_SIZE=10485760
@@ -209,13 +219,13 @@ UPLOAD_DIR=./uploads
 BCRYPT_ROUNDS=12
 RATE_LIMIT_WINDOW_MS=900000
 RATE_LIMIT_MAX=100
+LOG_LEVEL=info
 ```
 
 ### Frontend (.env)
 
 ```env
-VITE_API_URL=http://localhost:5000/api
-VITE_ENVIRONMENT=development
+VITE_API_BASE_URL=http://localhost:5000/api
 ```
 
 ## 🧪 Testing
@@ -225,31 +235,28 @@ VITE_ENVIRONMENT=development
 ```bash
 cd backend
 
-# Run all tests
+# Run all tests (Vitest)
 npm test
 
 # Run tests with coverage
 npm run test:coverage
 
 # Run specific test files
-npm test -- injiClient.test.ts
+npm test -- test/injiClient.test.ts
 ```
 
-### Integration Testing
+### Additional Test Utilities
 
-```bash
-# Test complete integration workflow
-npm run test-final-integration
+Additional helper scripts for full integration, documentation, verification, and revocation flows live under:
 
-# Test frontend components
-npm run test-frontend
-
-# Test VC verification
-npm run test-verification
-
-# Test revocation flow
-npm run test-revocation
+```text
+backend/test/
 ```
+
+These are used for deeper evaluation and Inji integration and may require extra setup. For details, refer to:
+
+- `backend/GET_STARTED.md`
+- `INJI_INTEGRATION.md`
 
 ## 📖 API Documentation
 
