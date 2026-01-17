@@ -13,6 +13,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { Switch } from "@/components/ui/switch";
 import { AppFooter } from "../components/layout/AppFooter";
+import TiltedCard from "../components/TiltedCard";
 
 // --- ANIMATION VARIANTS ---
 const containerVar = {
@@ -282,25 +283,50 @@ const WorkflowSection = () => (
           </div>
         </div>
 
-        <div className="order-1 md:order-2 bg-gradient-to-br from-slate-900 to-slate-950 rounded-2xl p-1 shadow-2xl border border-white/10 rotate-1 hover:rotate-0 transition-transform duration-500">
-          <div className="rounded-xl overflow-hidden bg-slate-950/50 h-full p-8 flex flex-col justify-center items-center text-center space-y-6">
-            <div className="h-20 w-20 rounded-full bg-emerald-500/10 flex items-center justify-center">
-              <ShieldCheck className="h-10 w-10 text-emerald-500" />
+        <div className="order-1 md:order-2 relative rotate-2">
+          <TiltedCard
+            containerHeight="400px"
+            containerWidth="90%"
+            cardHeight="400px"
+            cardWidth="90%"
+            scaleOnHover={1.08}
+            rotateAmplitude={15}
+            showTooltip={true}
+            tooltipText="Cryptographically secured credentials"
+            className="cursor-pointer"
+          >
+            <div className="bg-gradient-to-br from-slate-900/95 to-emerald-950/95 backdrop-blur-xl border border-emerald-500/20 h-full p-8 flex flex-col justify-center items-center text-center space-y-6 shadow-2xl relative overflow-hidden">
+              {/* Background pattern */}
+              <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 to-transparent opacity-20" />
+              
+              <div className="relative z-10 h-20 w-20 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center backdrop-blur-sm">
+                <ShieldCheck className="h-10 w-10 text-emerald-400 drop-shadow-lg" />
+              </div>
+              
+              <div className="relative z-10">
+                <h3 className="text-xl font-semibold text-white mb-2">Tamper-Proof Logic</h3>
+                <p className="text-slate-300 text-sm leading-relaxed max-w-sm">
+                  Unlike PDFs, AgriQCert credentials are signed digitally. Any modification breaks the seal.
+                </p>
+              </div>
+              
+              <div className="relative z-10 w-full bg-slate-950/80 border border-emerald-500/30 rounded-lg p-4 text-left font-mono text-xs text-emerald-400 overflow-hidden backdrop-blur-sm">
+                <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 to-transparent" />
+                <div className="relative">
+                  <p className="opacity-60">{"{"}</p>
+                  <p className="pl-4 text-emerald-300">"issuer": "did:Inji:qa-agency",</p>
+                  <p className="pl-4 text-emerald-300">"status": "verified",</p>
+                  <p className="pl-4 text-emerald-300">"integrity": "sha-256-hash..."</p>
+                  <p className="opacity-60">{"}"}</p>
+                </div>
+              </div>
+              
+              {/* Floating particles effect */}
+              <div className="absolute top-4 right-4 w-2 h-2 bg-emerald-400/40 rounded-full animate-pulse" />
+              <div className="absolute bottom-8 left-6 w-1 h-1 bg-emerald-400/60 rounded-full animate-ping" style={{animationDelay: '1s'}} />
+              <div className="absolute top-16 left-8 w-1.5 h-1.5 bg-emerald-400/50 rounded-full animate-pulse" style={{animationDelay: '2s'}} />
             </div>
-            <div>
-              <h3 className="text-xl font-semibold text-white">Tamper-Proof Logic</h3>
-              <p className="text-slate-400 text-sm mt-2">
-                Unlike PDFs, AgriQCert credentials are signed digitally. Any modification breaks the seal.
-              </p>
-            </div>
-            <div className="w-full bg-slate-900 rounded-lg p-4 border border-slate-800 text-left font-mono text-xs text-emerald-400 overflow-hidden">
-              <p className="opacity-50">{"{"}</p>
-              <p className="pl-4">"issuer": "did:Inji:qa-agency",</p>
-              <p className="pl-4">"status": "verified",</p>
-              <p className="pl-4">"integrity": "sha-256-hash..."</p>
-              <p className="opacity-50">{"}"}</p>
-            </div>
-          </div>
+          </TiltedCard>
         </div>
       </div>
     </div>
