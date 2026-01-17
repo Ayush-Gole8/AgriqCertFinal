@@ -64,7 +64,6 @@ const revocationSchema = new Schema<IRevocationDocument>(
       type: Date,
       required: true,
       default: Date.now,
-      index: true,
     },
     metadata: {
       type: Schema.Types.Mixed,

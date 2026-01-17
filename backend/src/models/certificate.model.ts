@@ -46,7 +46,6 @@ const certificateSchema = new Schema<ICertificateDocument>(
       required: [true, 'Batch ID is required'],
       ref: 'Batch',
       unique: true,
-      index: true,
     },
     vc: {
       type: verifiableCredentialSchema,
@@ -98,7 +97,6 @@ const certificateSchema = new Schema<ICertificateDocument>(
     },
     expiresAt: {
       type: Date,
-      index: true,
     },
     revokedAt: {
       type: Date,
