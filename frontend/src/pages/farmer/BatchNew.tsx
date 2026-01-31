@@ -20,6 +20,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AppShell } from '@/components/layout/AppShell';
 import { useToast } from '@/hooks/use-toast';
 import { api } from '@/api/apiClient';
+import { AlertCircle } from 'lucide-react';
 
 const CROPS = [
   { value: 'wheat', label: 'Wheat' },
@@ -33,6 +34,74 @@ const CROPS = [
   { value: 'tomato', label: 'Tomato' },
   { value: 'other', label: 'Other' },
 ];
+
+const CROP_VARIETIES: Record<string, { value: string; label: string }[]> = {
+  rice: [
+    { value: 'basmati', label: 'Basmati' },
+    { value: 'sona_masuri', label: 'Sona Masuri' },
+    { value: 'ir64', label: 'IR-64' },
+    { value: 'mtu1010', label: 'MTU-1010' },
+    { value: 'swarna', label: 'Swarna' },
+  ],
+
+  wheat: [
+    { value: 'hd_2967', label: 'HD-2967' },
+    { value: 'hd_3086', label: 'HD-3086' },
+    { value: 'lok1', label: 'Lok-1' },
+    { value: 'pbw_343', label: 'PBW-343' },
+    { value: 'dbw_187', label: 'DBW-187' },
+  ],
+
+  maize: [
+    { value: 'dent', label: 'Dent Corn' },
+    { value: 'flint', label: 'Flint Corn' },
+    { value: 'sweet', label: 'Sweet Corn' },
+    { value: 'baby_corn', label: 'Baby Corn' },
+    { value: 'hybrid_maize', label: 'Hybrid Maize' },
+  ],
+
+  barley: [
+    { value: 'bh393', label: 'BH-393' },
+    { value: 'rd2035', label: 'RD-2035' },
+    { value: 'rd2552', label: 'RD-2552' },
+  ],
+
+  soybean: [
+    { value: 'js335', label: 'JS-335' },
+    { value: 'js9560', label: 'JS-9560' },
+    { value: 'nrc37', label: 'NRC-37' },
+    { value: 'ps1347', label: 'PS-1347' },
+  ],
+
+  cotton: [
+    { value: 'bt_cotton', label: 'BT Cotton' },
+    { value: 'desi_cotton', label: 'Desi Cotton' },
+    { value: 'hybrid_cotton', label: 'Hybrid Cotton' },
+    { value: 'shankar6', label: 'Shankar-6' },
+  ],
+
+  sugarcane: [
+    { value: 'co0238', label: 'CO-0238' },
+    { value: 'co86032', label: 'CO-86032' },
+    { value: 'co671', label: 'CO-671' },
+    { value: 'co99004', label: 'CO-99004' },
+  ],
+
+  potato: [
+    { value: 'kufri_jyoti', label: 'Kufri Jyoti' },
+    { value: 'kufri_pukhraj', label: 'Kufri Pukhraj' },
+    { value: 'kufri_bahaar', label: 'Kufri Bahaar' },
+    { value: 'kufri_chipsona', label: 'Kufri Chipsona' },
+  ],
+
+  tomato: [
+    { value: 'pusa_ruby', label: 'Pusa Ruby' },
+    { value: 'arka_vikas', label: 'Arka Vikas' },
+    { value: 'roma', label: 'Roma' },
+    { value: 'cherry_tomato', label: 'Cherry Tomato' },
+    { value: 'hybrid_tomato', label: 'Hybrid Tomato' },
+  ],
+};
 
 const PACKAGING_TYPES = [
   { value: 'jute_sack', label: 'Jute Sack' },
@@ -187,6 +256,10 @@ function BatchNew() {
       farmer_declaration: false,
     },
   });
+
+  // 👇 ADD HERE
+const selectedCrop = form.watch('crop');
+const selectedVariety = form.watch('variety');
 
   // Auto-fetch location on component mount
   useEffect(() => {
@@ -371,10 +444,15 @@ function BatchNew() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="batch_id">Batch ID</Label>
-                <Input 
-                  {...form.register('batch_id')} 
-                  disabled 
-                  className="bg-gray-50"
+                <Input
+                  {...form.register('batch_id')}
+                  disabled
+                  className="
+                    bg-gray-50 text-gray-900
+                    dark:bg-gray-900 dark:text-gray-100
+                    dark:border-gray-700
+                    disabled:opacity-100
+                  "
                 />
                 {form.formState.errors.batch_id && (
                   <p className="text-red-500 text-sm mt-1">{form.formState.errors.batch_id.message}</p>
@@ -501,30 +579,64 @@ function BatchNew() {
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="crop">Crop Type *</Label>
-                <Select onValueChange={(value) => form.setValue('crop', value)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select crop" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CROPS.map((crop) => (
-                      <SelectItem key={crop.value} value={crop.value}>
-                        {crop.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {form.formState.errors.crop && (
-                  <p className="text-red-500 text-sm mt-1">{form.formState.errors.crop.message}</p>
-                )}
-              </div>
-              <div>
-                <Label htmlFor="variety">Variety *</Label>
-                <Input {...form.register('variety')} placeholder="HD-2967, Basmati, etc." />
-                {form.formState.errors.variety && (
-                  <p className="text-red-500 text-sm mt-1">{form.formState.errors.variety.message}</p>
-                )}
-              </div>
+          <Label>Crop Type *</Label>
+          <Select
+            value={selectedCrop}
+            onValueChange={(value) => form.setValue('crop', value)}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select crop" />
+            </SelectTrigger>
+            <SelectContent>
+              {CROPS.map((crop) => (
+                <SelectItem key={crop.value} value={crop.value}>
+                  {crop.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Variety */}
+        <div>
+          <Label>Variety *</Label>
+          <Select
+            value={selectedVariety}
+            disabled={!selectedCrop}
+            onValueChange={(value) => form.setValue('variety', value)}
+          >
+            <SelectTrigger>
+              <SelectValue
+                placeholder={selectedCrop ? 'Select variety' : 'Select crop first'}
+              />
+            </SelectTrigger>
+            <SelectContent>
+              {selectedCrop &&
+                CROP_VARIETIES[selectedCrop]?.map((v) => (
+                  <SelectItem key={v.value} value={v.value}>
+                    {v.label}
+                  </SelectItem>
+                ))}
+              <SelectItem value="other">Other</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {/* 👇 THIS WAS MISSING */}
+          {selectedVariety === 'other' && (
+            <Input
+              className="mt-2"
+              placeholder="Enter variety name"
+              onChange={(e) => form.setValue('variety', e.target.value)}
+            />
+          )}
+
+          {form.formState.errors.variety && (
+            <p className="text-red-500 text-sm mt-1">
+              {form.formState.errors.variety.message}
+            </p>
+          )}
+        </div>
+            
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -794,49 +906,75 @@ function BatchNew() {
             Back to Batches
           </Button>
           
-          <h1 className="text-3xl font-bold text-gray-900">Create New Batch</h1>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+            Create New Batch
+          </h1>
           <p className="text-gray-600">Submit your agricultural batch for quality certification</p>
         </div>
 
         {/* Progress Steps */}
         <div className="mb-8">
-          <div className="flex items-center justify-between">
-            {steps.map((step, index) => {
-              const isActive = currentStep === step.number;
-              const isCompleted = currentStep > step.number;
-              const IconComponent = step.icon;
-              
-              return (
-                <div key={step.number} className="flex items-center">
-                  <div className={`flex items-center justify-center w-10 h-10 rounded-full border-2 ${
-                    isCompleted 
-                      ? 'bg-green-500 border-green-500 text-white' 
-                      : isActive 
-                        ? 'bg-blue-500 border-blue-500 text-white' 
-                        : 'bg-white border-gray-300 text-gray-500'
-                  }`}>
-                    {isCompleted ? (
-                      <CheckCircle className="h-5 w-5" />
-                    ) : (
-                      <IconComponent className="h-5 w-5" />
-                    )}
-                  </div>
-                  <div className="ml-3 hidden md:block">
-                    <p className={`text-sm font-medium ${
-                      isActive ? 'text-blue-600' : isCompleted ? 'text-green-600' : 'text-gray-500'
-                    }`}>
-                      {step.title}
-                    </p>
-                  </div>
-                  {index < steps.length - 1 && (
-                    <div className={`hidden md:block w-16 h-0.5 mx-4 ${
-                      isCompleted ? 'bg-green-500' : 'bg-gray-300'
-                    }`} />
-                  )}
-                </div>
-              );
-            })}
+          <div className="flex flex-wrap items-center justify-center gap-y-6">
+  {steps.map((step, index) => {
+    const isActive = currentStep === step.number;
+    const isCompleted = currentStep > step.number;
+    const IconComponent = step.icon;
+
+    return (
+      <React.Fragment key={step.number}>
+        {/* Step */}
+        <div className="flex flex-col items-center min-w-[90px]">
+          <div
+            className={`flex items-center justify-center w-10 h-10 rounded-full border-2
+              ${
+                isCompleted
+                  ? 'bg-green-500 border-green-500 text-white'
+                  : isActive
+                  ? 'bg-blue-500 border-blue-500 text-white'
+                  : 'bg-white dark:bg-gray-900 border-gray-300 dark:border-gray-600 text-gray-500'
+              }
+            `}
+          >
+            {isCompleted ? (
+              <CheckCircle className="h-5 w-5" />
+            ) : (
+              <IconComponent className="h-5 w-5" />
+            )}
           </div>
+
+          <p
+            className={`mt-2 text-sm font-medium text-center
+              ${
+                isActive
+                  ? 'text-blue-600'
+                  : isCompleted
+                  ? 'text-green-600'
+                  : 'text-gray-500 dark:text-gray-400'
+              }
+            `}
+          >
+            {step.title}
+          </p>
+        </div>
+
+        {/* Connector Line */}
+        {index < steps.length - 1 && (
+          <div className="hidden md:flex flex-1 min-w-[40px] max-w-[80px] items-center">
+            <div
+              className={`h-0.5 w-full
+                ${
+                  isCompleted
+                    ? 'bg-green-500'
+                    : 'bg-gray-300 dark:bg-gray-600'
+                }
+              `}
+            />
+          </div>
+        )}
+      </React.Fragment>
+    );
+  })}
+</div>
         </div>
 
         {/* Form */}
