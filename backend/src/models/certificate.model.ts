@@ -110,6 +110,42 @@ const certificateSchema = new Schema<ICertificateDocument>(
       trim: true,
       maxlength: [500, 'Revocation reason cannot exceed 500 characters'],
     },
+    // Wallet metadata for Inji Wallet integration
+    walletMetadata: {
+      pushEnabled: {
+        type: Boolean,
+        default: true,
+      },
+      pushStatus: {
+        type: String,
+        enum: ['pending', 'sent', 'received', 'failed'],
+        default: 'pending',
+      },
+      pushAttempts: {
+        type: Number,
+        default: 0,
+        min: [0, 'Push attempts cannot be negative'],
+      },
+      lastPushAttempt: {
+        type: Date,
+      },
+      walletDeeplink: {
+        type: String,
+        trim: true,
+      },
+      walletUserId: {
+        type: String,
+        trim: true,
+      },
+      pushError: {
+        type: String,
+        trim: true,
+        maxlength: [1000, 'Push error cannot exceed 1000 characters'],
+      },
+      receivedAt: {
+        type: Date,
+      },
+    },
     // Provider metadata
     metadata: {
       type: Schema.Types.Mixed,

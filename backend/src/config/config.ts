@@ -42,11 +42,33 @@ const config = {
       defaultExpiryDays: parseInt(process.env.VC_DEFAULT_EXPIRY_DAYS || "365", 10),
     },
     inji: {
-      apiUrl: process.env.INJI_API_URL,
+      environment: process.env.INJI_ENVIRONMENT || "sandbox",
+      apiUrl: process.env.INJI_ENVIRONMENT === "production" 
+        ? process.env.INJI_PRODUCTION_API_URL 
+        : process.env.INJI_SANDBOX_API_URL || process.env.INJI_API_URL,
       apiKey: process.env.INJI_API_KEY,
-      issuerDid: process.env.INJI_ISSUER_DID,
+      clientId: process.env.INJI_CLIENT_ID,
+      clientSecret: process.env.INJI_CLIENT_SECRET,
+      issuerDid: process.env.INJI_ISSUER_DID || process.env.VC_ISSUER_DID || "did:example:agriqcert",
+      
+      // Webhook configuration
+      webhookEnabled: process.env.INJI_WEBHOOK_ENABLED === "true",
       webhookSecret: process.env.INJI_WEBHOOK_SECRET,
+      webhookSignatureAlgorithm: process.env.INJI_WEBHOOK_SIGNATURE_ALGORITHM || "sha256",
+      webhookToleranceSeconds: parseInt(process.env.INJI_WEBHOOK_TOLERANCE_SECONDS || "300", 10),
+      webhookRetryMaxAttempts: parseInt(process.env.INJI_WEBHOOK_RETRY_MAX_ATTEMPTS || "3", 10),
+      
+      // Wallet configuration
+      walletPushEnabled: process.env.INJI_WALLET_PUSH_ENABLED === "true",
+      walletDeeplinkScheme: process.env.INJI_WALLET_DEEPLINK_SCHEME || "inji://",
+      walletAppUrl: process.env.INJI_WALLET_APP_URL || "https://wallet.inji.io",
+      
+      // Mode configuration
       mockMode: process.env.INJI_MOCK_MODE === "true" || process.env.INJI_MOCK_MODE === "1",
+      demoMode: process.env.INJI_DEMO_MODE === "true",
+      demoRecordingPath: process.env.INJI_DEMO_RECORDING_PATH || "./docs/demo-recordings/",
+      recordDemos: process.env.INJI_RECORD_DEMOS === "true",
+      fallbackToDemoOnError: process.env.INJI_FALLBACK_TO_DEMO_ON_ERROR === "true",
     },
     worker: {
       pollIntervalMs: parseInt(process.env.WORKER_POLL_INTERVAL_MS || "3000", 10),

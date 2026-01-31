@@ -17,6 +17,7 @@ import {
   Download,
   AlertCircle,
   RefreshCw,
+  Upload,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -24,22 +25,25 @@ import { Badge } from '@/components/ui/badge';
 import { StatusBadge } from '@/components/StatusBadge';
 import { QRViewer } from '@/components/QRViewer';
 import { AppShell } from '@/components/layout/AppShell';
-import { useBatch, useInspections } from '@/hooks/useApi';
+import { useBatch, useInspections, useSubmitBatch } from '@/hooks/useApi';
 import { useCertificateByBatch, useBatchCertificateStatus } from '@/hooks/useVCS';
 import { useIssueVC } from '@/hooks/useIssueVC';
 import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 
 export default function BatchDetail() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
+  const { toast } = useToast();
   const [showQRModal, setShowQRModal] = useState(false);
   
   const { data: batchData, isLoading, refetch: refetchBatch } = useBatch(id || '');
   const { data: inspectionsData } = useInspections({ batchId: id });
   const { certificate, hasCertificate, status: certificateStatus, canIssue } = useBatchCertificateStatus(id || '');
   const issueVC = useIssueVC();
+  const submitBatch = useSubmitBatch();
   
   const batch = batchData?.data;
   const inspections = inspectionsData?.data || [];
@@ -55,6 +59,26 @@ export default function BatchDetail() {
       });
     } catch (error) {
       console.error('Failed to issue VC:', error);
+    }
+  };
+
+  const handleSubmitBatch = async () => {
+    if (!batch) return;
+    
+    try {
+      await submitBatch.mutateAsync(batch.id);
+      toast({
+        title: "Success",
+        description: "Batch submitted for inspection successfully!",
+      });
+      refetchBatch();
+    } catch (error) {
+      console.error('Failed to submit batch:', error);
+      toast({
+        title: "Error",
+        description: "Failed to submit batch. Please try again.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -136,6 +160,21 @@ export default function BatchDetail() {
                 <Award className="h-4 w-4 mr-2" />
                 View Certificate
               </Link>
+            </Button>
+          )}
+          
+          {batch.status === 'draft' && user?.role === 'farmer' && (
+            <Button 
+              onClick={handleSubmitBatch}
+              disabled={submitBatch.isPending}
+              className="bg-primary hover:bg-primary/90"
+            >
+              {submitBatch.isPending ? (
+                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Upload className="h-4 w-4 mr-2" />
+              )}
+              Submit for Inspection
             </Button>
           )}
         </div>

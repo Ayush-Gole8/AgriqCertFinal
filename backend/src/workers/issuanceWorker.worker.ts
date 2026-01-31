@@ -78,7 +78,9 @@ class IssuanceWorker {
     }
 
     const availableSlots = this.maxConcurrency - this.activeJobs.size;
-    const pendingJobs = await (IssuanceJob as any).findPendingJobs(availableSlots);
+    const pendingJobs = await (IssuanceJob as unknown as {
+      findPendingJobs(slots: number): Promise<Array<{ id: string }>>
+    }).findPendingJobs(availableSlots);
 
     if (pendingJobs.length === 0) {
       return;
@@ -87,7 +89,7 @@ class IssuanceWorker {
     console.log(`[IssuanceWorker] Found ${pendingJobs.length} pending jobs`);
 
     // Process jobs concurrently
-    const promises = pendingJobs.map((job: any) => this.processJob(job.id));
+    const promises = pendingJobs.map((job: { id: string }) => this.processJob(job.id));
     await Promise.allSettled(promises);
   }
 
@@ -103,7 +105,9 @@ class IssuanceWorker {
 
     try {
       // Claim the job atomically
-      const job = await (IssuanceJob as any).claimJob(jobId, this.workerId);
+      const job = await (IssuanceJob as unknown as {
+        claimJob(id: string, workerId: string): Promise<{ id: string; batchId: string; inspectionId?: string; createdAt: Date } | null>
+      }).claimJob(jobId, this.workerId);
       if (!job) {
         console.log(`[IssuanceWorker] Job ${jobId} already claimed or processed`);
         return;
@@ -156,7 +160,9 @@ class IssuanceWorker {
       });
 
       // Mark job as successful
-      await (IssuanceJob as any).markSuccess(jobId, {
+      await (IssuanceJob as unknown as {
+        markSuccess(id: string, data: object): Promise<void>
+      }).markSuccess(jobId, {
         vcId: result.vcId,
         vcUrl: result.vcUrl,
         certificateId: certificate.id,
@@ -172,6 +178,15 @@ class IssuanceWorker {
       // Create notification
       await this.createNotification(batch, certificate);
 
+      // Attempt wallet push (non-blocking - don't fail job if this fails)
+      try {
+        const { walletService } = await import('../services/wallet.service.js');
+        await walletService.pushToWallet(certificate.id, batch.farmerId);
+      } catch (walletError) {
+        console.error(`[IssuanceWorker] Wallet push failed for certificate ${certificate.id}:`, walletError);
+        // Don't fail the job for wallet push errors
+      }
+
       console.log(`[IssuanceWorker] Successfully processed job ${jobId}, created certificate ${certificate.id}`);
 
     } catch (error) {
@@ -183,10 +198,14 @@ class IssuanceWorker {
       const currentJob = await IssuanceJob.findById(jobId);
       if (currentJob && currentJob.attempts >= 3) {
         // Max attempts reached, mark as failed
-        await (IssuanceJob as any).markFailed(jobId, errorMessage);
+        await (IssuanceJob as unknown as {
+          markFailed(id: string, error: string): Promise<void>
+        }).markFailed(jobId, errorMessage);
       } else {
         // Requeue for retry
-        await (IssuanceJob as any).requeueJob(jobId, errorMessage);
+        await (IssuanceJob as unknown as {
+          requeueJob(id: string, error: string): Promise<void>
+        }).requeueJob(jobId, errorMessage);
       }
     } finally {
       this.activeJobs.delete(jobId);
@@ -196,8 +215,11 @@ class IssuanceWorker {
   /**
    * Build credential payload from batch and inspection data
    */
-  private buildCredentialPayload(batch: any, inspection: any): VCPayload {
-    const credentialSubject: Record<string, any> = {
+  private buildCredentialPayload(
+    batch: Record<string, unknown>, 
+    inspection: Record<string, unknown>
+  ): VCPayload {
+    const credentialSubject: Record<string, unknown> = {
       id: `did:agriqcert:batch:${batch.id}`,
       batchId: batch.id,
       productType: batch.productType,
@@ -214,7 +236,7 @@ class IssuanceWorker {
       traceabilityInfo: {
         farmId: batch.farmerId,
         batchNumber: batch.id,
-        harvestSeason: this.getHarvestSeason(batch.harvestDate),
+        harvestSeason: this.getHarvestSeason(batch.harvestDate as Date),
       },
     };
 
@@ -251,7 +273,10 @@ class IssuanceWorker {
   /**
    * Create notification for successful issuance
    */
-  private async createNotification(batch: any, certificate: any): Promise<void> {
+  private async createNotification(
+    batch: Record<string, unknown>, 
+    certificate: Record<string, unknown>
+  ): Promise<void> {
     try {
       await Notification.create({
         userId: batch.farmerId,

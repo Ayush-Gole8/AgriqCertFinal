@@ -84,6 +84,16 @@ const userSchema = new Schema<IUserDocument>(
       default: [],
       select: false,
     },
+    // Inji Wallet Integration
+    walletId: {
+      type: String,
+      default: null,
+      index: true,
+    },
+    walletLinkedAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,

@@ -369,7 +369,17 @@ export const api = {
       };
     },
 
-    complete: async (id: string, data: { passed: boolean; comments?: string; readings?: unknown[] }): Promise<ApiResponse<Inspection>> => {
+    complete: async (id: string, data: { 
+      readings?: any[];
+      notes?: string;
+      overallResult?: string;
+      outcome?: {
+        classification: string;
+        reasoning: string;
+        followUpRequired: boolean;
+        complianceNotes?: string;
+      };
+    }): Promise<ApiResponse<Inspection>> => {
       if (!id || id === 'undefined' || id === 'null') {
         throw new Error('Invalid inspection ID provided');
       }
@@ -414,11 +424,28 @@ export const api = {
       return { success: true, data: cert };
     },
 
-    issue: async (batchId: string): Promise<ApiResponse<Certificate>> => {
-      await delay(1500);
-      // This would normally be a complex VC issuance process
-      const cert = mockCertificates[0]; // Return existing mock for demo
-      return { success: true, data: cert };
+    issue: async (batchId: string): Promise<ApiResponse<{ jobId: string; status: string; batchId: string }>> => {
+      // First get the inspection for this batch to get inspectionId
+      const inspectionsResponse = await apiClient.get(`/inspections/batch/${batchId}`);
+      const inspections = inspectionsResponse.data.data.inspections;
+      const completedInspection = inspections.find((inspection: any) => 
+        inspection.status === 'completed' && inspection.overallResult === 'pass'
+      );
+      
+      if (!completedInspection) {
+        throw new Error('No completed passing inspection found for this batch');
+      }
+
+      const response = await apiClient.post('/vc/issue', {
+        batchId,
+        inspectionId: completedInspection.id
+      });
+      
+      return {
+        success: response.data.success,
+        data: response.data.data,
+        message: response.data.message
+      };
     },
 
     revoke: async (id: string, reason: string): Promise<ApiResponse<Certificate>> => {

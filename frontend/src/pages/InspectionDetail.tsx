@@ -15,7 +15,8 @@ import {
   AlertCircle,
   CheckCircle,
   Plus,
-  Minus
+  Minus,
+  FileText
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -25,8 +26,12 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { StatusBadge } from '@/components/StatusBadge';
 import { AppShell } from '@/components/layout/AppShell';
+import { OfflineStatus, OfflineCapabilityBanner } from '@/components/OfflineStatus';
+import { DraftManager } from '@/components/DraftManager';
 import { useAuth } from '@/contexts/AuthContext';
 import { useBatch, useInspections, useCreateInspection, useUpdateInspection, useCompleteInspection } from '@/hooks/useApi';
+import { useBatchCertificateStatus } from '@/hooks/useVCS';
+import { useOfflineInspection, type OfflineInspectionDraft } from '@/hooks/useOfflineInspection';
 import { useToast } from '@/hooks/use-toast';
 
 interface Reading {
@@ -46,6 +51,7 @@ export default function InspectionDetail() {
   
   const { data: batchData, isLoading: batchLoading } = useBatch(id || '');
   const { data: inspectionsData, isLoading: inspectionsLoading } = useInspections({ batchId: id });
+  const { certificate, hasCertificate, status: certificateStatus } = useBatchCertificateStatus(id || '');
   const createInspection = useCreateInspection();
   const updateInspection = useUpdateInspection();
   const completeInspection = useCompleteInspection();
@@ -54,7 +60,20 @@ export default function InspectionDetail() {
   const inspections = inspectionsData?.data || [];
   const existingInspection = inspections[0];
   
+  // Offline inspection hook
+  const {
+    isOnline,
+    drafts,
+    currentDraft,
+    saveDraft,
+    exportDraft,
+    importDraft,
+    deleteDraft,
+    getDraftStats
+  } = useOfflineInspection(id);
+
   const [readings, setReadings] = useState<Reading[]>(
+    currentDraft?.readings ||
     existingInspection?.readings || [
       { parameter: 'Moisture Content', value: '', unit: '%', minThreshold: 10, maxThreshold: 14, passed: false },
       { parameter: 'Temperature', value: '', unit: '°C', minThreshold: 20, maxThreshold: 25, passed: false },
@@ -62,8 +81,12 @@ export default function InspectionDetail() {
     ]
   );
   
-  const [notes, setNotes] = useState(existingInspection?.notes || '');
+  const [notes, setNotes] = useState(
+    currentDraft?.notes ||
+    existingInspection?.notes || ''
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showDraftManager, setShowDraftManager] = useState(false);
 
   const updateReading = (index: number, field: keyof Reading, value: string | number | undefined) => {
     const newReadings = [...readings];
@@ -78,6 +101,16 @@ export default function InspectionDetail() {
     }
     
     setReadings(newReadings);
+    
+    // Auto-save to draft if offline or if current draft exists
+    if (!isOnline || currentDraft) {
+      saveDraft({
+        readings: newReadings,
+        notes,
+        batchName: batch?.productName,
+        farmerName: batch?.farmerName
+      });
+    }
   };
 
   const addReading = () => {
@@ -98,6 +131,25 @@ export default function InspectionDetail() {
   const handleSaveProgress = async () => {
     if (!id) return;
     
+    if (!batch) {
+      toast({
+        title: "Error",
+        description: "Batch information not available. Please refresh the page.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Check if batch is in the right state for inspection
+    if (batch.status === 'draft') {
+      toast({
+        title: "Cannot Start Inspection",
+        description: "Batch must be submitted before inspection can begin. Please submit the batch first.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
     const validReadings = readings.filter(r => r.parameter && r.value !== '');
     
     if (validReadings.length === 0) {
@@ -108,12 +160,40 @@ export default function InspectionDetail() {
       });
       return;
     }
+
+    // If offline, save as draft
+    if (!isOnline) {
+      saveDraft({
+        readings: validReadings,
+        notes,
+        batchName: batch?.productName,
+        farmerName: batch?.farmerName,
+        geolocation: {
+          latitude: batch?.location?.latitude || 0,
+          longitude: batch?.location?.longitude || 0,
+          accuracy: 10,
+          timestamp: new Date().toISOString(),
+        }
+      });
+      return;
+    }
     
     setIsSubmitting(true);
     try {
       const inspectionData = {
-        readings: validReadings,
+        batchId: id,
+        inspectorId: user?.id || '',
+        inspectorName: user?.name || 'Unknown Inspector',
+        readings: validReadings.map(r => ({
+          parameter: r.parameter,
+          value: typeof r.value === 'string' ? parseFloat(r.value) || 0 : r.value,
+          unit: r.unit,
+          minThreshold: r.minThreshold,
+          maxThreshold: r.maxThreshold,
+          passed: r.passed
+        })),
         notes,
+        status: 'in_progress' as const,
         geolocation: {
           latitude: batch?.location?.latitude || 0,
           longitude: batch?.location?.longitude || 0,
@@ -123,27 +203,43 @@ export default function InspectionDetail() {
       };
 
       if (existingInspection) {
-        await updateInspection.mutateAsync({ id: existingInspection.id, data: inspectionData });
+        await updateInspection.mutateAsync({ id: existingInspection.id, data: {
+          readings: inspectionData.readings,
+          notes: inspectionData.notes,
+          status: inspectionData.status,
+          geolocation: inspectionData.geolocation
+        } as Record<string, unknown> });
         toast({ title: "Progress saved", description: "Inspection progress has been saved successfully." });
       } else {
         await createInspection.mutateAsync({ batchId: id, data: inspectionData });
         toast({ title: "Inspection started", description: "Quality inspection has been initiated." });
       }
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Save progress error:', error);
-      let message = "Failed to save inspection progress. Please try again.";
-
-      if (error && typeof error === "object") {
-        const err = error as {
-          response?: { data?: { message?: string } };
-          message?: string;
-        };
-
-        message = err.response?.data?.message || err.message || message;
+      
+      let errorMessage = "Failed to save inspection progress. Please try again.";
+      
+      // Handle specific error cases based on status code
+      const errorResponse = error as { response?: { status?: number; data?: { message?: string } } };
+      if (errorResponse.response?.status === 400) {
+        if (errorResponse.response?.data?.message) {
+          errorMessage = errorResponse.response.data.message;
+        } else {
+          errorMessage = "Invalid inspection data. Please check batch status and try again.";
+        }
+      } else if (errorResponse.response?.status === 404) {
+        errorMessage = "Batch not found. Please refresh the page and try again.";
+      } else if (errorResponse.response?.status === 409) {
+        errorMessage = "Inspection already exists for this batch. Please refresh to see latest data.";
+      } else if (errorResponse.response?.status === 422) {
+        errorMessage = "Validation failed. Please check all required fields are filled correctly.";
+      } else if (errorResponse && typeof errorResponse === 'object' && 'message' in errorResponse && typeof errorResponse.message === 'string') {
+        errorMessage = errorResponse.message;
       }
+      
       toast({ 
         title: "Error", 
-        description: message,
+        description: errorMessage,
         variant: "destructive"
       });
     } finally {
@@ -151,11 +247,46 @@ export default function InspectionDetail() {
     }
   };
 
+  // Load draft data
+  const handleLoadDraft = (draft: OfflineInspectionDraft) => {
+    setReadings(draft.readings);
+    setNotes(draft.notes);
+    toast({
+      title: "Draft Loaded",
+      description: `Loaded inspection draft from ${new Date(draft.lastModified).toLocaleString()}`,
+      variant: "default"
+    });
+  };
+
+  // Auto-save notes when changed
+  const handleNotesChange = (value: string) => {
+    setNotes(value);
+    
+    // Auto-save to draft if offline or if current draft exists
+    if (!isOnline || currentDraft) {
+      saveDraft({
+        readings,
+        notes: value,
+        batchName: batch?.productName,
+        farmerName: batch?.farmerName
+      });
+    }
+  };
+
   const handleCompleteInspection = async () => {
-    if (!existingInspection) {
+    if (!isOnline) {
+      toast({
+        title: "Offline Mode",
+        description: "Cannot complete inspection while offline. Please connect to internet and try again.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (batch?.status === 'draft') {
       toast({ 
-        title: "Error", 
-        description: "Please save your progress first before completing the inspection.",
+        title: "Batch Not Submitted", 
+        description: "This batch must be submitted for inspection first. Please contact the farmer to submit the batch.",
         variant: "destructive"
       });
       return;
@@ -175,8 +306,30 @@ export default function InspectionDetail() {
     
     setIsSubmitting(true);
     try {
+      let inspectionId = existingInspection?.id;
+      
+      // Create inspection if it doesn't exist
+      if (!existingInspection) {
+        const inspectionData = {
+          readings: validReadings,
+          notes,
+          geolocation: {
+            latitude: batch?.location?.latitude || 0,
+            longitude: batch?.location?.longitude || 0,
+            accuracy: 10,
+            timestamp: new Date().toISOString(),
+          },
+        };
+        
+        const newInspection = await createInspection.mutateAsync({ 
+          batchId: id, 
+          data: inspectionData 
+        });
+        inspectionId = newInspection.data.id;
+      }
+
       await completeInspection.mutateAsync({
-        id: existingInspection.id,
+        id: inspectionId,
         data: {
           readings: validReadings,
           notes,
@@ -286,6 +439,69 @@ export default function InspectionDetail() {
           <StatusBadge status={batch.status} />
         </div>
 
+        {/* Draft Batch Warning */}
+        {batch?.status === 'draft' && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            <Card className="border-orange-200 bg-orange-50">
+              <CardContent className="pt-4">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="h-5 w-5 text-orange-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <h3 className="font-medium text-orange-900">Batch Not Yet Submitted</h3>
+                    <p className="text-sm text-orange-700 mt-1">
+                      This batch is still in draft status and has not been submitted for inspection. 
+                      Please contact the farmer to submit the batch first.
+                    </p>
+                    <div className="mt-2">
+                      <Badge variant="outline" className="border-orange-300 text-orange-700">
+                        Status: {batch.status}
+                      </Badge>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+
+        {/* Offline Capability Banner */}
+        <OfflineCapabilityBanner />
+
+        {/* Offline Status and Draft Management */}
+        <div className="grid gap-6 lg:grid-cols-2">
+          <OfflineStatus
+            isOnline={isOnline}
+            currentDraft={currentDraft}
+            draftStats={getDraftStats()}
+            onExport={() => exportDraft()}
+            onImport={importDraft}
+          />
+          
+          {(drafts.length > 0 || showDraftManager) && (
+            <DraftManager
+              drafts={drafts}
+              currentDraftId={currentDraft?.id}
+              onExportDraft={exportDraft}
+              onDeleteDraft={deleteDraft}
+              onLoadDraft={handleLoadDraft}
+            />
+          )}
+          
+          {drafts.length > 0 && !showDraftManager && (
+            <Button
+              variant="outline"
+              onClick={() => setShowDraftManager(true)}
+              className="h-auto"
+            >
+              <FileText className="h-4 w-4 mr-2" />
+              Manage Drafts ({drafts.length})
+            </Button>
+          )}
+        </div>
+
         <div className="grid gap-6 lg:grid-cols-3">
           {/* Batch Information */}
           <Card>
@@ -319,6 +535,19 @@ export default function InspectionDetail() {
               <div>
                 <Label className="text-sm font-medium">Location</Label>
                 <p className="text-sm">{batch.location?.address || 'Location not specified'}</p>
+              </div>
+              <div>
+                <Label className="text-sm font-medium">Certificate Status</Label>
+                <div className="flex items-center gap-2 mt-1">
+                  <Badge variant={hasCertificate ? 'default' : 'outline'}>
+                    {hasCertificate ? 'Issued' : 'Not Issued'}
+                  </Badge>
+                  {hasCertificate && certificate && (
+                    <span className="text-xs text-muted-foreground">
+                      ID: {certificate.id.slice(0, 8)}...
+                    </span>
+                  )}
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -430,7 +659,7 @@ export default function InspectionDetail() {
             <CardContent>
               <Textarea
                 value={notes}
-                onChange={(e) => setNotes(e.target.value)}
+                onChange={(e) => handleNotesChange(e.target.value)}
                 placeholder="Add any observations, notes, or comments about the quality inspection..."
                 className="min-h-[120px]"
               />
@@ -468,16 +697,24 @@ export default function InspectionDetail() {
                     variant="outline"
                     onClick={handleSaveProgress}
                     disabled={isSubmitting || !hasValidReadings}
+                    className={cn(
+                      !isOnline && "border-orange-300 bg-orange-50 text-orange-700"
+                    )}
                   >
                     <Save className="h-4 w-4 mr-2" />
-                    Save Progress
+                    {!isOnline ? 'Save Locally' : 'Save Progress'}
                   </Button>
                   <Button
                     onClick={handleCompleteInspection}
-                    disabled={isSubmitting || !hasValidReadings || !existingInspection}
+                    disabled={
+                      isSubmitting || 
+                      !hasValidReadings || 
+                      !isOnline ||
+                      batch?.status === 'draft'
+                    }
                   >
                     <Send className="h-4 w-4 mr-2" />
-                    Complete Inspection
+                    {batch?.status === 'draft' ? 'Batch must be submitted first' : 'Complete Inspection'}
                   </Button>
                 </div>
               </div>

@@ -16,7 +16,8 @@ import {
   Search,
   Plus,
   Sun,
-  Moon
+  Moon,
+  Smartphone
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -39,6 +40,7 @@ const navItems: NavItem[] = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, roles: ['farmer', 'qa_inspector', 'certifier', 'admin', 'verifier'] },
   { label: 'Batches', href: '/batches', icon: Package, roles: ['farmer', 'qa_inspector', 'certifier', 'admin'] },
   { label: 'Inspections', href: '/inspections', icon: ClipboardCheck, roles: ['qa_inspector', 'certifier', 'admin'] },
+  { label: 'Offline Demo', href: '/offline-demo', icon: Smartphone, roles: ['qa_inspector', 'admin'] },
   { label: 'Certificates', href: '/certificates', icon: Award, roles: ['farmer', 'certifier', 'admin', 'verifier'] },
   { label: 'Users', href: '/admin/users', icon: Users, roles: ['admin'] },
   { label: 'Settings', href: '/admin/settings', icon: Settings, roles: ['admin'] },
