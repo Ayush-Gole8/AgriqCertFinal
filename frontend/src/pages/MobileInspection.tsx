@@ -64,13 +64,13 @@ export default function MobileInspection() {
     }
   }, [readings, notes, location, saveDraft, id]);
 
-  const updateReading = (index: number, field: string, value: any) => {
+  const updateReading = (index: number, field: string, value: string | number) => {
     const newReadings = [...readings];
     newReadings[index] = { ...newReadings[index], [field]: value };
     
     // Auto-calculate passed status
     if (field === 'value' && newReadings[index].minThreshold && newReadings[index].maxThreshold) {
-      const numValue = parseFloat(value);
+      const numValue = parseFloat(String(value));
       const min = newReadings[index].minThreshold!;
       const max = newReadings[index].maxThreshold!;
       newReadings[index].passed = numValue >= min && numValue <= max;

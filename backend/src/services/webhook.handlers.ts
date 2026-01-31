@@ -142,7 +142,7 @@ export async function handleWalletCredentialReceived(payload: WebhookPayload): P
 
     // Get farmer info
     const batch = await cert.populate('batchId');
-    const farmerId = (batch as any).batchId?.farmerId;
+    const farmerId = (batch as unknown as { batchId?: { farmerId: string } }).batchId?.farmerId;
 
     if (farmerId) {
       // Create success notification
@@ -321,7 +321,7 @@ export async function handleRevocation(payload: WebhookPayload): Promise<void> {
 
     // Get farmer info
     const batch = await cert.populate('batchId');
-    const farmerId = (batch as any).batchId?.farmerId;
+    const farmerId = (batch as unknown as { batchId?: { farmerId: string } }).batchId?.farmerId;
 
     if (farmerId) {
       // Notify farmer

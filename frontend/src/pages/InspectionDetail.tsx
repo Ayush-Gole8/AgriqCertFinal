@@ -33,15 +33,7 @@ import { useBatch, useInspections, useCreateInspection, useUpdateInspection, use
 import { useBatchCertificateStatus } from '@/hooks/useVCS';
 import { useOfflineInspection, type OfflineInspectionDraft } from '@/hooks/useOfflineInspection';
 import { useToast } from '@/hooks/use-toast';
-
-interface Reading {
-  parameter: string;
-  value: string | number;
-  unit: string;
-  minThreshold?: number;
-  maxThreshold?: number;
-  passed: boolean;
-}
+import type { InspectionReading } from '@/types';
 
 export default function InspectionDetail() {
   const { id } = useParams<{ id: string }>();
@@ -72,7 +64,7 @@ export default function InspectionDetail() {
     getDraftStats
   } = useOfflineInspection(id);
 
-  const [readings, setReadings] = useState<Reading[]>(
+  const [readings, setReadings] = useState<InspectionReading[]>(
     currentDraft?.readings ||
     existingInspection?.readings || [
       { parameter: 'Moisture Content', value: '', unit: '%', minThreshold: 10, maxThreshold: 14, passed: false },
@@ -88,7 +80,7 @@ export default function InspectionDetail() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showDraftManager, setShowDraftManager] = useState(false);
 
-  const updateReading = (index: number, field: keyof Reading, value: string | number | undefined) => {
+  const updateReading = (index: number, field: keyof InspectionReading, value: string | number | undefined) => {
     const newReadings = [...readings];
     newReadings[index] = { ...newReadings[index], [field]: value };
     
@@ -311,6 +303,9 @@ export default function InspectionDetail() {
       // Create inspection if it doesn't exist
       if (!existingInspection) {
         const inspectionData = {
+          batchId: id,
+          inspectorId: user?.id || '',
+          inspectorName: user?.name || 'Unknown Inspector',
           readings: validReadings,
           notes,
           geolocation: {
@@ -331,7 +326,7 @@ export default function InspectionDetail() {
       await completeInspection.mutateAsync({
         id: inspectionId,
         data: {
-          readings: validReadings,
+          readings: validReadings as unknown as Record<string, unknown>[],
           notes,
           overallResult: passed ? 'pass' : 'fail',
           outcome: {

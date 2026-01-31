@@ -1,475 +1,915 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { ArrowLeft, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
+import { 
+  ArrowLeft, ArrowRight, CheckCircle, Loader2, MapPin, Camera, Upload, 
+  Phone, Mail, Calendar, Package, Beaker, FileText, Shield, User
+} from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AppShell } from '@/components/layout/AppShell';
+import { useToast } from '@/hooks/use-toast';
 import { api } from '@/api/apiClient';
 
-const UNITS = [
-  { value: 'kg', label: 'Kilogram (kg)' },
-  { value: 'tonne', label: 'Tonne (MT)' },
-  { value: 'gram', label: 'Gram (g)' },
-  { value: 'lbs', label: 'Pound (lbs)' },
-  { value: 'oz', label: 'Ounce (oz)' },
-  { value: 'quintal', label: 'Quintal (q)' },
-  { value: 'bag', label: 'Bag' },
-  { value: 'box', label: 'Box' },
-  { value: 'crate', label: 'Crate' },
-  { value: 'liter', label: 'Liter (L)' },
-  { value: 'gallon', label: 'Gallon (US)' },
+const CROPS = [
+  { value: 'wheat', label: 'Wheat' },
+  { value: 'rice', label: 'Rice' },
+  { value: 'maize', label: 'Maize/Corn' },
+  { value: 'barley', label: 'Barley' },
+  { value: 'soybean', label: 'Soybean' },
+  { value: 'cotton', label: 'Cotton' },
+  { value: 'sugarcane', label: 'Sugarcane' },
+  { value: 'potato', label: 'Potato' },
+  { value: 'tomato', label: 'Tomato' },
+  { value: 'other', label: 'Other' },
 ];
 
+const PACKAGING_TYPES = [
+  { value: 'jute_sack', label: 'Jute Sack' },
+  { value: 'polybag', label: 'Polybag' },
+  { value: 'bulk_container', label: 'Bulk Container' },
+  { value: 'box', label: 'Box' },
+  { value: 'crate', label: 'Crate' },
+];
+
+const INSPECTION_RESULTS = [
+  { value: 'pass', label: 'Pass' },
+  { value: 'conditional', label: 'Conditional' },
+  { value: 'fail', label: 'Fail' },
+];
+
+const INCOTERMS = [
+  { value: 'FOB', label: 'FOB - Free on Board' },
+  { value: 'CIF', label: 'CIF - Cost, Insurance & Freight' },
+  { value: 'EXW', label: 'EXW - Ex Works' },
+  { value: 'FCA', label: 'FCA - Free Carrier' },
+  { value: 'CFR', label: 'CFR - Cost and Freight' },
+];
+
+const PHOTO_TYPES = [
+  { value: 'field', label: 'Field View' },
+  { value: 'harvest', label: 'Harvest Process' },
+  { value: 'packing', label: 'Packing/Storage' },
+  { value: 'weighbridge', label: 'Weighbridge/Scale' },
+];
+
+// Generate batch ID
+const generateBatchId = (): string => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = (now.getMonth() + 1).toString().padStart(2, '0');
+  const day = now.getDate().toString().padStart(2, '0');
+  const random = Math.floor(Math.random() * 9999).toString().padStart(4, '0');
+  return `AGQC-${year}${month}${day}-REG-${random}`;
+};
+
+// Validation schemas
+const farmAddressSchema = z.object({
+  street: z.string().optional(),
+  village: z.string().min(2, 'Village is required'),
+  district: z.string().min(2, 'District is required'),
+  state: z.string().min(2, 'State is required'),
+  country: z.string().min(2, 'Country is required'),
+  postal_code: z.string().optional(),
+});
+
+const photoSchema = z.object({
+  url: z.string().min(1, 'Photo URL is required'),
+  timestamp: z.string(),
+  type: z.enum(['field', 'harvest', 'packing', 'weighbridge']),
+  caption: z.string().optional(),
+});
+
 const batchSchema = z.object({
-  productType: z.string().min(2, 'Product type is required'),
-  productName: z.string().min(2, 'Product name is required'),
-  quantity: z.coerce.number().positive('Quantity must be positive'),
-  unit: z.string().min(1, 'Unit is required'),
-  harvestDate: z.string().min(1, 'Harvest date is required'),
-  location: z.object({
-    latitude: z.coerce.number().min(-90).max(90, 'Invalid latitude'),
-    longitude: z.coerce.number().min(-180).max(180, 'Invalid longitude'),
-    address: z.string().min(5, 'Address is required'),
-    region: z.string().min(2, 'Region is required'),
+  // A. Basic/Identity
+  batch_id: z.string().regex(/^[A-Z0-9\-]{6,50}$/, 'Invalid batch ID format'),
+  farmer_id: z.string().min(1, 'Farmer ID is required'),
+  farmer_name: z.string().min(2, 'Farmer name is required'),
+  contact_phone: z.string().regex(/^\+?[1-9]\d{1,14}$/, 'Invalid phone number format'),
+  contact_email: z.string().email('Invalid email format').optional().or(z.literal('')),
+
+  // B. Farm & Origin
+  farm_address: farmAddressSchema,
+  farm_geo_point: z.object({
+    lat: z.coerce.number().min(-90).max(90, 'Invalid latitude'),
+    lon: z.coerce.number().min(-180).max(180, 'Invalid longitude'),
   }),
+  land_area_ha: z.coerce.number().positive('Land area must be positive').optional().or(z.literal(0)),
+
+  // C. Crop & Batch
+  crop: z.string().min(2, 'Crop type is required'),
+  variety: z.string().min(1, 'Variety is required'),
+  planting_date: z.string().optional().or(z.literal('')),
+  harvest_date: z.string().min(1, 'Harvest date is required'),
+  lot_number: z.string().optional().or(z.literal('')),
+  quantity_net_kg: z.coerce.number().positive('Quantity must be positive'),
+  packaging_type: z.string().optional(),
+  num_packages: z.coerce.number().int().positive('Number of packages must be positive').optional().or(z.literal(0)),
+
+  // D. Quality & Lab
+  moisture_percent: z.coerce.number().min(0).max(100, 'Moisture must be 0-100%').optional().or(z.literal(0)),
+  foreign_matter_percent: z.coerce.number().min(0).max(100, 'Foreign matter must be 0-100%').optional().or(z.literal(0)),
+  broken_grain_percent: z.coerce.number().min(0).max(100, 'Broken grain must be 0-100%').optional().or(z.literal(0)),
+  lab_test_id: z.string().optional().or(z.literal('')),
+
+  // E. Compliance & Trade
+  hs_code: z.string().regex(/^\d{6,8}$/, 'HS Code must be 6-8 digits').optional().or(z.literal('')),
+  destination_country: z.string().min(2, 'Destination country is required').optional().or(z.literal('')),
+  port_of_loading: z.string().optional().or(z.literal('')),
+  incoterm: z.string().optional(),
+
+  // F. Attachments
+  photos: z.array(photoSchema).min(2, 'Minimum 2 photos required (field + packing)'),
+
+  // G. Declarations
+  farmer_declaration: z.boolean().refine(val => val === true, 'You must accept the farmer declaration'),
 });
 
 type BatchFormData = z.infer<typeof batchSchema>;
 
-export default function BatchNew() {
+function BatchNew() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
-  const [successMessage, setSuccessMessage] = useState('');
-  const [errorMessage, setErrorMessage] = useState('');
-  const [step, setStep] = useState<'details' | 'location' | 'review'>('details');
+  const [currentStep, setCurrentStep] = useState(1);
+  const [uploadedPhotos, setUploadedPhotos] = useState<Array<{ url: string; timestamp: string; type: string; caption?: string }>>([]);
+  const [isCapturingLocation, setIsCapturingLocation] = useState(false);
 
   const form = useForm<BatchFormData>({
     resolver: zodResolver(batchSchema),
     defaultValues: {
-      productType: '',
-      productName: '',
-      quantity: 0,
-      unit: 'kg',
-      harvestDate: '',
-      location: {
-        latitude: 0,
-        longitude: 0,
-        address: '',
-        region: '',
+      batch_id: generateBatchId(),
+      farmer_id: user?.id || '',
+      farmer_name: user?.name || '',
+      contact_phone: user?.phone || '',
+      contact_email: user?.email || '',
+      farm_address: {
+        street: '',
+        village: '',
+        district: '',
+        state: '',
+        country: 'India',
+        postal_code: '',
       },
+      farm_geo_point: {
+        lat: 0,
+        lon: 0,
+      },
+      land_area_ha: 0,
+      crop: '',
+      variety: '',
+      planting_date: '',
+      harvest_date: '',
+      lot_number: '',
+      quantity_net_kg: 0,
+      packaging_type: '',
+      num_packages: 0,
+      moisture_percent: 0,
+      foreign_matter_percent: 0,
+      broken_grain_percent: 0,
+      lab_test_id: '',
+      hs_code: '',
+      destination_country: '',
+      port_of_loading: '',
+      incoterm: '',
+      photos: [],
+      farmer_declaration: false,
     },
   });
+
+  // Auto-fetch location on component mount
+  useEffect(() => {
+    if (navigator.geolocation) {
+      setIsCapturingLocation(true);
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          form.setValue('farm_geo_point.lat', position.coords.latitude);
+          form.setValue('farm_geo_point.lon', position.coords.longitude);
+          setIsCapturingLocation(false);
+          toast({
+            title: "Location captured",
+            description: "GPS coordinates automatically recorded",
+          });
+        },
+        (error) => {
+          console.error('Location error:', error);
+          setIsCapturingLocation(false);
+          toast({
+            title: "Location unavailable",
+            description: "Please enter coordinates manually",
+            variant: "destructive",
+          });
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    }
+  }, [form, toast]);
+
+  const steps = [
+    { number: 1, title: 'Basic Info', icon: User },
+    { number: 2, title: 'Farm Details', icon: MapPin },
+    { number: 3, title: 'Crop Info', icon: Package },
+    { number: 4, title: 'Quality Data', icon: Beaker },
+    { number: 5, title: 'Trade Info', icon: FileText },
+    { number: 6, title: 'Photos', icon: Camera },
+    { number: 7, title: 'Declaration', icon: Shield },
+  ];
 
   if (user?.role !== 'farmer') {
     return (
       <AppShell>
-        <div className="max-w-md mx-auto py-12">
-          <Card className="w-full">
-            <CardContent className="pt-6">
-              <Alert className="mb-4 border-red-200 bg-red-50">
-                <AlertCircle className="h-4 w-4 text-red-600" />
-                <AlertDescription className="text-red-800">
-                  Only farmers can create batches
-                </AlertDescription>
-              </Alert>
-              <Button onClick={() => navigate(-1)} className="w-full">
-                Go Back
-              </Button>
-            </CardContent>
-          </Card>
+        <div className="max-w-md mx-auto mt-8">
+          <Alert>
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              Only farmers can create new batches. Please contact your administrator if you believe this is an error.
+            </AlertDescription>
+          </Alert>
         </div>
       </AppShell>
     );
   }
 
+  const handleNext = () => {
+    if (currentStep < steps.length) {
+      setCurrentStep(currentStep + 1);
+    }
+  };
+
   const handleBack = () => {
-    if (step === 'location') {
-      setStep('details');
-    } else if (step === 'review') {
-      setStep('location');
+    if (currentStep > 1) {
+      setCurrentStep(currentStep - 1);
     }
   };
 
-  const handleNext = async () => {
-    if (step === 'details') {
-      const isValid = await form.trigger(['productType', 'productName', 'quantity', 'unit', 'harvestDate']);
-      if (isValid) {
-        setStep('location');
-      }
-    } else if (step === 'location') {
-      const isValid = await form.trigger([
-        'location.latitude',
-        'location.longitude',
-        'location.address',
-        'location.region',
-      ]);
-      if (isValid) {
-        setStep('review');
-      }
-    }
-  };
+  const handlePhotoUpload = async (event: React.ChangeEvent<HTMLInputElement>, type: string) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
 
-  const onSubmit = async (data: BatchFormData) => {
-    setIsLoading(true);
-    setErrorMessage('');
-    setSuccessMessage('');
+    const file = files[0];
 
     try {
-      const location = {
-        latitude: Number(data.location.latitude),
-        longitude: Number(data.location.longitude),
-        address: data.location.address || '',
-        region: data.location.region || '',
+      setIsLoading(true);
+      const response = await api.uploads.upload(file);
+      const newPhoto = {
+        url: response.data.url,
+        timestamp: new Date().toISOString(),
+        type,
+        caption: '',
       };
 
-      const batchResponse = await api.batches.create({
-        farmerId: user?.id || '',
-        farmerName: user?.name || '',
-        productType: data.productType,
-        productName: data.productName,
-        quantity: data.quantity,
-        unit: data.unit,
-        harvestDate: data.harvestDate,
-        location,
-        attachments: [],
+      setUploadedPhotos(prev => [...prev, newPhoto]);
+      form.setValue('photos', [...uploadedPhotos, newPhoto]);
+
+      toast({
+        title: "Photo uploaded",
+        description: `${type} photo added successfully`,
       });
-
-      if (!batchResponse.success) {
-        throw new Error(batchResponse.message || 'Failed to create batch');
-      }
-
-      const batchId = batchResponse.data.id;
-
-      const submitResponse = await api.batches.submit(batchId);
-
-      if (!submitResponse.success) {
-        throw new Error(submitResponse.message || 'Failed to submit batch');
-      }
-
-      setSuccessMessage('Batch created and submitted successfully!');
-      setTimeout(() => {
-        navigate('/batches');
-      }, 2000);
-    } catch (error: unknown) {
-      const err = error as { response?: { data?: { message?: string } }; message?: string };
-      setErrorMessage(err.response?.data?.message || err.message || 'An error occurred');
-      console.error('Batch submission error:', error);
+    } catch (error) {
+      toast({
+        title: "Upload failed",
+        description: "Failed to upload photo. Please try again.",
+        variant: "destructive",
+      });
     } finally {
       setIsLoading(false);
     }
   };
 
-  const formData = form.watch();
+  const onSubmit = async (data: BatchFormData) => {
+    try {
+      setIsLoading(true);
+
+      // Create batch with comprehensive data
+      const batchPayload = {
+        farmerId: data.farmer_id,
+        farmerName: data.farmer_name,
+        productType: data.crop,
+        productName: `${data.crop} - ${data.variety}`,
+        quantity: data.quantity_net_kg,
+        unit: 'kg',
+        harvestDate: data.harvest_date,
+        location: {
+          latitude: data.farm_geo_point.lat,
+          longitude: data.farm_geo_point.lon,
+          address: `${data.farm_address.street || ''} ${data.farm_address.village}, ${data.farm_address.district}`,
+          region: data.farm_address.state,
+          country: data.farm_address.country,
+        },
+        // Additional comprehensive metadata
+        batchMetadata: {
+          batchId: data.batch_id,
+          contactPhone: data.contact_phone,
+          contactEmail: data.contact_email,
+          farmAddress: data.farm_address,
+          landAreaHa: data.land_area_ha,
+          variety: data.variety,
+          plantingDate: data.planting_date,
+          lotNumber: data.lot_number,
+          packagingType: data.packaging_type,
+          numPackages: data.num_packages,
+          qualityData: {
+            moisturePercent: data.moisture_percent,
+            foreignMatterPercent: data.foreign_matter_percent,
+            brokenGrainPercent: data.broken_grain_percent,
+            labTestId: data.lab_test_id,
+          },
+          tradeData: {
+            hsCode: data.hs_code,
+            destinationCountry: data.destination_country,
+            portOfLoading: data.port_of_loading,
+            incoterm: data.incoterm,
+          },
+          photos: data.photos,
+          farmerDeclaration: data.farmer_declaration,
+          signatureFarmer: `${data.farmer_name} - ${new Date().toISOString()}`,
+          dataProvenance: {
+            createdBy: user?.id,
+            createdAt: new Date().toISOString(),
+            clientVersion: '1.0.0',
+          },
+          verificationHash: '', // Will be generated server-side
+        },
+      };
+
+      const response = await api.batches.create(batchPayload);
+
+      toast({
+        title: "Batch created successfully",
+        description: `Batch ${data.batch_id} has been submitted for inspection`,
+      });
+
+      navigate(`/farmer/batches/${response.data.id}`);
+    } catch (error: unknown) {
+      console.error('Batch creation failed:', error);
+      toast({
+        title: "Submission failed",
+        description: "Failed to create batch. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const renderFormStep = () => {
+    switch (currentStep) {
+      case 1: // Basic Info
+        return (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="batch_id">Batch ID</Label>
+                <Input 
+                  {...form.register('batch_id')} 
+                  disabled 
+                  className="bg-gray-50"
+                />
+                {form.formState.errors.batch_id && (
+                  <p className="text-red-500 text-sm mt-1">{form.formState.errors.batch_id.message}</p>
+                )}
+              </div>
+              <div>
+                <Label htmlFor="farmer_name">Farmer Name</Label>
+                <Input {...form.register('farmer_name')} />
+                {form.formState.errors.farmer_name && (
+                  <p className="text-red-500 text-sm mt-1">{form.formState.errors.farmer_name.message}</p>
+                )}
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="contact_phone">Contact Phone</Label>
+                <Input 
+                  {...form.register('contact_phone')} 
+                  type="tel"
+                  placeholder="+91 9876543210"
+                />
+                {form.formState.errors.contact_phone && (
+                  <p className="text-red-500 text-sm mt-1">{form.formState.errors.contact_phone.message}</p>
+                )}
+              </div>
+              <div>
+                <Label htmlFor="contact_email">Contact Email (Optional)</Label>
+                <Input 
+                  {...form.register('contact_email')} 
+                  type="email"
+                  placeholder="farmer@example.com"
+                />
+                {form.formState.errors.contact_email && (
+                  <p className="text-red-500 text-sm mt-1">{form.formState.errors.contact_email.message}</p>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+
+      case 2: // Farm Details
+        return (
+          <div className="space-y-6">
+            <div className="space-y-4">
+              <h3 className="text-lg font-medium">Farm Address</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="farm_address.street">Street Address (Optional)</Label>
+                  <Input {...form.register('farm_address.street')} placeholder="House No., Street" />
+                </div>
+                <div>
+                  <Label htmlFor="farm_address.village">Village *</Label>
+                  <Input {...form.register('farm_address.village')} placeholder="Village name" />
+                  {form.formState.errors.farm_address?.village && (
+                    <p className="text-red-500 text-sm mt-1">{form.formState.errors.farm_address.village.message}</p>
+                  )}
+                </div>
+                <div>
+                  <Label htmlFor="farm_address.district">District *</Label>
+                  <Input {...form.register('farm_address.district')} placeholder="District" />
+                  {form.formState.errors.farm_address?.district && (
+                    <p className="text-red-500 text-sm mt-1">{form.formState.errors.farm_address.district.message}</p>
+                  )}
+                </div>
+                <div>
+                  <Label htmlFor="farm_address.state">State *</Label>
+                  <Input {...form.register('farm_address.state')} placeholder="State" />
+                  {form.formState.errors.farm_address?.state && (
+                    <p className="text-red-500 text-sm mt-1">{form.formState.errors.farm_address.state.message}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <h3 className="text-lg font-medium flex items-center gap-2">
+                <MapPin className="h-5 w-5" />
+                GPS Coordinates
+                {isCapturingLocation && <Loader2 className="h-4 w-4 animate-spin" />}
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="farm_geo_point.lat">Latitude</Label>
+                  <Input 
+                    {...form.register('farm_geo_point.lat')} 
+                    type="number" 
+                    step="any"
+                    placeholder="28.6139"
+                  />
+                  {form.formState.errors.farm_geo_point?.lat && (
+                    <p className="text-red-500 text-sm mt-1">{form.formState.errors.farm_geo_point.lat.message}</p>
+                  )}
+                </div>
+                <div>
+                  <Label htmlFor="farm_geo_point.lon">Longitude</Label>
+                  <Input 
+                    {...form.register('farm_geo_point.lon')} 
+                    type="number" 
+                    step="any"
+                    placeholder="77.2090"
+                  />
+                  {form.formState.errors.farm_geo_point?.lon && (
+                    <p className="text-red-500 text-sm mt-1">{form.formState.errors.farm_geo_point.lon.message}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="land_area_ha">Farm Area (Hectares)</Label>
+              <Input 
+                {...form.register('land_area_ha')} 
+                type="number" 
+                step="0.1"
+                placeholder="2.5"
+              />
+            </div>
+          </div>
+        );
+
+      case 3: // Crop Info  
+        return (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="crop">Crop Type *</Label>
+                <Select onValueChange={(value) => form.setValue('crop', value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select crop" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CROPS.map((crop) => (
+                      <SelectItem key={crop.value} value={crop.value}>
+                        {crop.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {form.formState.errors.crop && (
+                  <p className="text-red-500 text-sm mt-1">{form.formState.errors.crop.message}</p>
+                )}
+              </div>
+              <div>
+                <Label htmlFor="variety">Variety *</Label>
+                <Input {...form.register('variety')} placeholder="HD-2967, Basmati, etc." />
+                {form.formState.errors.variety && (
+                  <p className="text-red-500 text-sm mt-1">{form.formState.errors.variety.message}</p>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="planting_date">Planting Date (Optional)</Label>
+                <Input {...form.register('planting_date')} type="date" />
+              </div>
+              <div>
+                <Label htmlFor="harvest_date">Harvest Date *</Label>
+                <Input {...form.register('harvest_date')} type="date" />
+                {form.formState.errors.harvest_date && (
+                  <p className="text-red-500 text-sm mt-1">{form.formState.errors.harvest_date.message}</p>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <Label htmlFor="quantity_net_kg">Quantity (kg) *</Label>
+                <Input 
+                  {...form.register('quantity_net_kg')} 
+                  type="number" 
+                  step="0.1"
+                  placeholder="1000"
+                />
+                {form.formState.errors.quantity_net_kg && (
+                  <p className="text-red-500 text-sm mt-1">{form.formState.errors.quantity_net_kg.message}</p>
+                )}
+              </div>
+              <div>
+                <Label htmlFor="packaging_type">Packaging Type</Label>
+                <Select onValueChange={(value) => form.setValue('packaging_type', value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select packaging" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PACKAGING_TYPES.map((type) => (
+                      <SelectItem key={type.value} value={type.value}>
+                        {type.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="num_packages">Number of Packages</Label>
+                <Input 
+                  {...form.register('num_packages')} 
+                  type="number"
+                  placeholder="20"
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="lot_number">Lot Number (Optional)</Label>
+              <Input {...form.register('lot_number')} placeholder="LOT-2024-001" />
+            </div>
+          </div>
+        );
+
+      case 4: // Quality Data
+        return (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <Label htmlFor="moisture_percent">Moisture Content (%)</Label>
+                <Input 
+                  {...form.register('moisture_percent')} 
+                  type="number" 
+                  step="0.1"
+                  placeholder="12.5"
+                  max="100"
+                />
+              </div>
+              <div>
+                <Label htmlFor="foreign_matter_percent">Foreign Matter (%)</Label>
+                <Input 
+                  {...form.register('foreign_matter_percent')} 
+                  type="number" 
+                  step="0.1"
+                  placeholder="1.2"
+                  max="100"
+                />
+              </div>
+              <div>
+                <Label htmlFor="broken_grain_percent">Broken Grain (%)</Label>
+                <Input 
+                  {...form.register('broken_grain_percent')} 
+                  type="number" 
+                  step="0.1"
+                  placeholder="2.0"
+                  max="100"
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="lab_test_id">Lab Test ID (Optional)</Label>
+              <Input {...form.register('lab_test_id')} placeholder="LAB-2024-001" />
+            </div>
+
+            <Alert>
+              <Beaker className="h-4 w-4" />
+              <AlertDescription>
+                Quality parameters will be verified during inspection. Initial values can be estimates.
+              </AlertDescription>
+            </Alert>
+          </div>
+        );
+
+      case 5: // Trade Info
+        return (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="destination_country">Destination Country</Label>
+                <Input {...form.register('destination_country')} placeholder="India, USA, etc." />
+              </div>
+              <div>
+                <Label htmlFor="hs_code">HS Code (6-8 digits)</Label>
+                <Input {...form.register('hs_code')} placeholder="100190" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="port_of_loading">Port of Loading</Label>
+                <Input {...form.register('port_of_loading')} placeholder="JNPT, Chennai, etc." />
+              </div>
+              <div>
+                <Label htmlFor="incoterm">Incoterm</Label>
+                <Select onValueChange={(value) => form.setValue('incoterm', value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select incoterm" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {INCOTERMS.map((term) => (
+                      <SelectItem key={term.value} value={term.value}>
+                        {term.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <Alert>
+              <FileText className="h-4 w-4" />
+              <AlertDescription>
+                Trade information is optional but recommended for export batches.
+              </AlertDescription>
+            </Alert>
+          </div>
+        );
+
+      case 6: // Photos
+        return (
+          <div className="space-y-6">
+            <Alert>
+              <Camera className="h-4 w-4" />
+              <AlertDescription>
+                Upload at least 2 photos: one field view and one packing/storage photo. Maximum 5MB each.
+              </AlertDescription>
+            </Alert>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {PHOTO_TYPES.map((photoType) => (
+                <div key={photoType.value} className="space-y-2">
+                  <Label>{photoType.label}</Label>
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png"
+                      onChange={(e) => handlePhotoUpload(e, photoType.value)}
+                      className="hidden"
+                      id={`photo-${photoType.value}`}
+                    />
+                    <label
+                      htmlFor={`photo-${photoType.value}`}
+                      className="cursor-pointer flex flex-col items-center space-y-2"
+                    >
+                      <Upload className="h-8 w-8 text-gray-400" />
+                      <span className="text-sm text-gray-600">
+                        Upload {photoType.label}
+                      </span>
+                    </label>
+                  </div>
+                  {uploadedPhotos.filter(p => p.type === photoType.value).map((photo, index) => (
+                    <div key={index} className="text-sm text-green-600 flex items-center gap-2">
+                      <CheckCircle className="h-4 w-4" />
+                      Photo uploaded successfully
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+
+            <div className="text-sm text-gray-600">
+              Uploaded photos: {uploadedPhotos.length} / 2 minimum required
+            </div>
+            
+            {form.formState.errors.photos && (
+              <p className="text-red-500 text-sm mt-1">{form.formState.errors.photos.message}</p>
+            )}
+          </div>
+        );
+
+      case 7: // Declaration
+        return (
+          <div className="space-y-6">
+            <div className="bg-blue-50 p-6 rounded-lg">
+              <h3 className="text-lg font-medium mb-4">Farmer Declaration</h3>
+              <div className="prose prose-sm max-w-none">
+                <p>I, <strong>{form.getValues('farmer_name')}</strong>, hereby declare that:</p>
+                <ul className="list-disc pl-6 space-y-2">
+                  <li>The information provided in this batch submission is accurate and complete to the best of my knowledge.</li>
+                  <li>The agricultural products described were grown on my farm at the specified location.</li>
+                  <li>I have followed all applicable farming practices and regulations.</li>
+                  <li>I consent to inspection of this batch by certified quality inspectors.</li>
+                  <li>I understand that false information may result in rejection of certification.</li>
+                  <li>I agree to the terms and conditions of the AgriQCert platform.</li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="flex items-start space-x-3">
+              <Checkbox
+                checked={form.watch('farmer_declaration')}
+                onCheckedChange={(checked) => form.setValue('farmer_declaration', !!checked)}
+              />
+              <div className="grid gap-1.5 leading-none">
+                <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                  I accept the farmer declaration
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  By checking this box, you agree to the terms stated above.
+                </p>
+              </div>
+            </div>
+
+            {form.formState.errors.farmer_declaration && (
+              <p className="text-red-500 text-sm">{form.formState.errors.farmer_declaration.message}</p>
+            )}
+
+            <div className="bg-gray-50 p-4 rounded-lg text-sm text-gray-600">
+              <strong>Digital Signature:</strong> {form.getValues('farmer_name')} - {new Date().toLocaleDateString()}
+            </div>
+          </div>
+        );
+
+      default:
+        return null;
+    }
+  };
 
   return (
     <AppShell>
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="max-w-2xl mx-auto space-y-6"
-      >
-        <div className="flex items-center gap-4">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => navigate(-1)}
+      <div className="max-w-4xl mx-auto py-8 px-4">
+        <div className="mb-8">
+          <Button 
+            variant="ghost" 
+            onClick={() => navigate('/farmer/batches')}
+            className="mb-4"
           >
-            <ArrowLeft className="w-4 h-4" />
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Batches
           </Button>
-          <div>
-            <h1 className="text-2xl font-bold">Create New Batch</h1>
-            <p className="text-muted-foreground">Step {step === 'details' ? '1' : step === 'location' ? '2' : '3'} of 3</p>
+          
+          <h1 className="text-3xl font-bold text-gray-900">Create New Batch</h1>
+          <p className="text-gray-600">Submit your agricultural batch for quality certification</p>
+        </div>
+
+        {/* Progress Steps */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between">
+            {steps.map((step, index) => {
+              const isActive = currentStep === step.number;
+              const isCompleted = currentStep > step.number;
+              const IconComponent = step.icon;
+              
+              return (
+                <div key={step.number} className="flex items-center">
+                  <div className={`flex items-center justify-center w-10 h-10 rounded-full border-2 ${
+                    isCompleted 
+                      ? 'bg-green-500 border-green-500 text-white' 
+                      : isActive 
+                        ? 'bg-blue-500 border-blue-500 text-white' 
+                        : 'bg-white border-gray-300 text-gray-500'
+                  }`}>
+                    {isCompleted ? (
+                      <CheckCircle className="h-5 w-5" />
+                    ) : (
+                      <IconComponent className="h-5 w-5" />
+                    )}
+                  </div>
+                  <div className="ml-3 hidden md:block">
+                    <p className={`text-sm font-medium ${
+                      isActive ? 'text-blue-600' : isCompleted ? 'text-green-600' : 'text-gray-500'
+                    }`}>
+                      {step.title}
+                    </p>
+                  </div>
+                  {index < steps.length - 1 && (
+                    <div className={`hidden md:block w-16 h-0.5 mx-4 ${
+                      isCompleted ? 'bg-green-500' : 'bg-gray-300'
+                    }`} />
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
 
-        {successMessage && (
-          <Alert className="border-green-200 bg-green-50">
-            <CheckCircle className="h-4 w-4 text-green-600" />
-            <AlertDescription className="text-green-800">{successMessage}</AlertDescription>
-          </Alert>
-        )}
+        {/* Form */}
+        <form onSubmit={form.handleSubmit(onSubmit)}>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                {React.createElement(steps[currentStep - 1].icon, { className: "h-5 w-5" })}
+                {steps[currentStep - 1].title}
+              </CardTitle>
+              <CardDescription>
+                Step {currentStep} of {steps.length}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <motion.div
+                key={currentStep}
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.3 }}
+              >
+                {renderFormStep()}
+              </motion.div>
+            </CardContent>
+          </Card>
 
-        {errorMessage && (
-          <Alert className="border-red-200 bg-red-50">
-            <AlertCircle className="h-4 w-4 text-red-600" />
-            <AlertDescription className="text-red-800">{errorMessage}</AlertDescription>
-          </Alert>
-        )}
-
-        <Card>
-          <CardHeader className="border-b">
-            <CardTitle>
-              {step === 'details'
-                ? 'Product Details'
-                : step === 'location'
-                  ? 'Location Information'
-                  : 'Review & Submit'}
-            </CardTitle>
-            <CardDescription>
-              {step === 'details'
-                ? 'Enter the basic information about your batch'
-                : step === 'location'
-                  ? 'Provide location details for your batch'
-                  : 'Review all information before submitting'}
-            </CardDescription>
-          </CardHeader>
-
-          <CardContent className="p-6">
-            <form onSubmit={form.handleSubmit(onSubmit)}>
-              {/* Step 1: Details */}
-              {step === 'details' && (
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="space-y-4"
-                >
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Product Type</label>
-                    <Input
-                      {...form.register('productType')}
-                      placeholder="e.g., Tomato, Rice, Wheat"
-                      className="w-full"
-                    />
-                    {form.formState.errors.productType && (
-                      <p className="text-red-600 text-sm mt-1">{form.formState.errors.productType.message}</p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Product Name</label>
-                    <Input
-                      {...form.register('productName')}
-                      placeholder="e.g., Organic Red Tomatoes"
-                      className="w-full"
-                    />
-                    {form.formState.errors.productName && (
-                      <p className="text-red-600 text-sm mt-1">{form.formState.errors.productName.message}</p>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium mb-2">Quantity</label>
-                      <Input
-                        {...form.register('quantity')}
-                        type="number"
-                        placeholder="0"
-                        className="w-full"
-                      />
-                      {form.formState.errors.quantity && (
-                        <p className="text-red-600 text-sm mt-1">{form.formState.errors.quantity.message}</p>
-                      )}
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-2">Unit</label>
-                      <select
-                        {...form.register('unit')}
-                        className="w-full px-3 py-2 border border-input rounded-md bg-background text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                      >
-                        <option value="">Select a unit</option>
-                        {UNITS.map((unit) => (
-                          <option key={unit.value} value={unit.value}>
-                            {unit.label}
-                          </option>
-                        ))}
-                      </select>
-                      {form.formState.errors.unit && (
-                        <p className="text-red-600 text-sm mt-1">{form.formState.errors.unit.message}</p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Harvest Date</label>
-                    <Input
-                      {...form.register('harvestDate')}
-                      type="date"
-                      className="w-full"
-                    />
-                    {form.formState.errors.harvestDate && (
-                      <p className="text-red-600 text-sm mt-1">{form.formState.errors.harvestDate.message}</p>
-                    )}
-                  </div>
-                </motion.div>
-              )}
-
-              {/* Step 2: Location */}
-              {step === 'location' && (
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="space-y-4"
-                >
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Address</label>
-                    <Input
-                      {...form.register('location.address')}
-                      placeholder="e.g., 123 Farm Road, Village"
-                      className="w-full"
-                    />
-                    {form.formState.errors.location?.address && (
-                      <p className="text-red-600 text-sm mt-1">{form.formState.errors.location.address.message}</p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Region</label>
-                    <Input
-                      {...form.register('location.region')}
-                      placeholder="e.g., Maharashtra, Karnataka"
-                      className="w-full"
-                    />
-                    {form.formState.errors.location?.region && (
-                      <p className="text-red-600 text-sm mt-1">{form.formState.errors.location.region.message}</p>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium mb-2">Latitude</label>
-                      <Input
-                        {...form.register('location.latitude')}
-                        type="number"
-                        step="0.000001"
-                        placeholder="0.00"
-                        className="w-full"
-                      />
-                      {form.formState.errors.location?.latitude && (
-                        <p className="text-red-600 text-sm mt-1">{form.formState.errors.location.latitude.message}</p>
-                      )}
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-2">Longitude</label>
-                      <Input
-                        {...form.register('location.longitude')}
-                        type="number"
-                        step="0.000001"
-                        placeholder="0.00"
-                        className="w-full"
-                      />
-                      {form.formState.errors.location?.longitude && (
-                        <p className="text-red-600 text-sm mt-1">{form.formState.errors.location.longitude.message}</p>
-                      )}
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-
-              {/* Step 3: Review */}
-              {step === 'review' && (
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="space-y-6"
-                >
-                  <Card className="bg-secondary/50">
-                    <CardContent className="p-4">
-                      <h3 className="font-semibold mb-4">Product Details</h3>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <p className="text-sm text-muted-foreground">Product Type</p>
-                          <p className="font-medium">{formData.productType}</p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-muted-foreground">Product Name</p>
-                          <p className="font-medium">{formData.productName}</p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-muted-foreground">Quantity</p>
-                          <p className="font-medium">{formData.quantity} {formData.unit}</p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-muted-foreground">Harvest Date</p>
-                          <p className="font-medium">{new Date(formData.harvestDate).toLocaleDateString()}</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card className="bg-secondary/50">
-                    <CardContent className="p-4">
-                      <h3 className="font-semibold mb-4">Location Details</h3>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <p className="text-sm text-muted-foreground">Address</p>
-                          <p className="font-medium">{formData.location.address}</p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-muted-foreground">Region</p>
-                          <p className="font-medium">{formData.location.region}</p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-muted-foreground">Latitude</p>
-                          <p className="font-medium">{formData.location.latitude}</p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-muted-foreground">Longitude</p>
-                          <p className="font-medium">{formData.location.longitude}</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Alert className="border-blue-200 bg-blue-50">
-                    <AlertCircle className="h-4 w-4 text-blue-600" />
-                    <AlertDescription className="text-blue-800">
-                      By submitting, you confirm that all information is accurate and complete.
-                    </AlertDescription>
-                  </Alert>
-                </motion.div>
-              )}
-            </form>
-          </CardContent>
-
-          <div className="flex items-center justify-between p-6 pt-0 border-t">
+          {/* Navigation */}
+          <div className="flex justify-between mt-8">
             <Button
+              type="button"
               variant="outline"
               onClick={handleBack}
-              disabled={step === 'details' || isLoading}
+              disabled={currentStep === 1}
             >
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Previous
             </Button>
 
-            {step !== 'review' ? (
+            {currentStep === steps.length ? (
               <Button
-                onClick={handleNext}
+                type="submit"
                 disabled={isLoading}
-                className="bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:from-green-700 hover:to-emerald-700"
-              >
-                Next
-              </Button>
-            ) : (
-              <Button
-                onClick={form.handleSubmit(onSubmit)}
-                disabled={isLoading}
-                className="bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:from-green-700 hover:to-emerald-700"
+                className="bg-green-600 hover:bg-green-700"
               >
                 {isLoading ? (
                   <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                     Submitting...
                   </>
                 ) : (
                   <>
-                    <CheckCircle className="w-4 h-4 mr-2" />
+                    <CheckCircle className="h-4 w-4 mr-2" />
                     Submit Batch
                   </>
                 )}
               </Button>
+            ) : (
+              <Button
+                type="button"
+                onClick={handleNext}
+                disabled={isLoading}
+              >
+                Next
+                <ArrowRight className="h-4 w-4 ml-2" />
+              </Button>
             )}
           </div>
-        </Card>
-      </motion.div>
+        </form>
+      </div>
     </AppShell>
   );
 }
+
+export default BatchNew;
 

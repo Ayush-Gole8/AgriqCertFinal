@@ -126,7 +126,10 @@ class IssuanceWorker {
         : null;
 
       // Build credential payload
-      const payload = this.buildCredentialPayload(batch, inspection);
+      const payload = this.buildCredentialPayload(
+        batch.toObject() as unknown as Record<string, unknown>, 
+        inspection?.toObject() as unknown as Record<string, unknown>
+      );
 
       // Issue VC through Inji client
       const result = await injiClient.issueVC(payload);
@@ -176,7 +179,10 @@ class IssuanceWorker {
       }
 
       // Create notification
-      await this.createNotification(batch, certificate);
+      await this.createNotification(
+        batch.toObject() as unknown as Record<string, unknown>, 
+        certificate.toObject() as unknown as Record<string, unknown>
+      );
 
       // Attempt wallet push (non-blocking - don't fail job if this fails)
       try {

@@ -95,6 +95,7 @@ export class WalletService {
       // 3. Call Inji Wallet Push API
       try {
         await injiClient.pushToWallet({
+          userId: userId,
           walletId,
           vcJson: cert.vc as unknown as Record<string, unknown>,
         });

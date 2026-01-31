@@ -53,11 +53,12 @@ export class WebhookMiddleware {
           hasWebhookId: !!webhookId,
         });
         
-        return res.status(401).json({
+        res.status(401).json({
           success: false,
           error: 'Missing required webhook headers',
           code: 'MISSING_HEADERS',
         });
+        return;
       }
 
       if (!webhookId) {
@@ -69,11 +70,12 @@ export class WebhookMiddleware {
 
       if (!rawBody) {
         await this.logFailure(req, 'Missing request body');
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           error: 'Missing request body',
           code: 'MISSING_BODY',
         });
+        return;
       }
 
       // 4. Check for duplicate webhooks (idempotency)
@@ -83,11 +85,12 @@ export class WebhookMiddleware {
           console.log(`[WebhookMiddleware] Duplicate webhook detected: ${webhookId}`);
           
           // Return 200 but don't process (Inji expects 200 for idempotent calls)
-          return res.status(200).json({
+          res.status(200).json({
             success: true,
             message: 'Webhook already processed',
             duplicate: true,
           });
+          return;
         }
       }
 
@@ -101,11 +104,12 @@ export class WebhookMiddleware {
           timestampValue: timestamp,
         });
 
-        return res.status(401).json({
+        res.status(401).json({
           success: false,
           error: 'Invalid webhook signature',
           code: 'INVALID_SIGNATURE',
         });
+        return;
       }
 
       // 6. Create webhook log entry (will be updated after processing)
@@ -150,11 +154,12 @@ export class WebhookMiddleware {
         stack: (error as Error).stack,
       });
 
-      return res.status(500).json({
+      res.status(500).json({
         success: false,
         error: 'Webhook verification failed',
         code: 'VERIFICATION_ERROR',
       });
+      return;
     }
   };
 
