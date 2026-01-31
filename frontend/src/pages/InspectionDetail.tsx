@@ -2,6 +2,12 @@ import React, { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { 
+  createAIClient, 
+  extractTextFromFile, 
+  processLabReportWithAI,
+  validateExtractedParameters 
+} from '@/services/aiLabReportService';
 import {
   ArrowLeft,
   Package,
@@ -16,7 +22,10 @@ import {
   CheckCircle,
   Plus,
   Minus,
-  FileText
+  FileText,
+  Upload,
+  Brain,
+  Loader2
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -79,6 +88,8 @@ export default function InspectionDetail() {
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showDraftManager, setShowDraftManager] = useState(false);
+  const [isProcessingAI, setIsProcessingAI] = useState(false);
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
 
   const updateReading = (index: number, field: keyof InspectionReading, value: string | number | undefined) => {
     const newReadings = [...readings];
@@ -111,6 +122,117 @@ export default function InspectionDetail() {
 
   const removeReading = (index: number) => {
     setReadings(readings.filter((_, i) => i !== index));
+  };
+
+  // OpenRouter AI client configuration
+  const getAIClient = () => {
+    try {
+      return createAIClient();
+    } catch (error) {
+      console.error('Failed to initialize AI client:', error);
+      toast({
+        title: "Configuration Error",
+        description: "AI service is not properly configured. Please check your API key.",
+        variant: "destructive"
+      });
+      return null;
+    }
+  };
+
+  // Handle file upload and AI processing
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setUploadedFile(file);
+    setIsProcessingAI(true);
+
+    try {
+      // Validate file size (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        throw new Error('File size must be less than 5MB');
+      }
+
+      const aiClient = getAIClient();
+      if (!aiClient) {
+        return; // Error already shown in getAIClient
+      }
+      
+      // Extract text from file
+      console.log('[InspectionDetail] Extracting text from uploaded file...');
+      const reportText = await extractTextFromFile(file);
+      
+      console.log('[InspectionDetail] Text extracted. Length:', reportText.length);
+      
+      if (!reportText.trim()) {
+        throw new Error('The uploaded file appears to be empty or contains no readable text');
+      }
+      
+      // Process with AI
+      console.log('[InspectionDetail] Sending extracted text to Open Router AI...');
+      const extractedData = await processLabReportWithAI(reportText, aiClient);
+      console.log('[InspectionDetail] AI processing completed. Extracted parameters:', extractedData.parameters?.length || 0);
+      
+      // Validate and update readings with extracted parameters
+      if (extractedData.parameters && Array.isArray(extractedData.parameters)) {
+        const validatedParameters = validateExtractedParameters(extractedData.parameters);
+        
+        const newReadings = validatedParameters.map((param: any) => ({
+          parameter: param.parameter,
+          value: param.value,
+          unit: param.unit,
+          minThreshold: param.minThreshold,
+          maxThreshold: param.maxThreshold,
+          passed: param.passed
+        }));
+        
+        setReadings(newReadings);
+        
+        // Add AI processing notes if available
+        if (extractedData.notes) {
+          const aiNotes = `\n\n--- AI Extraction Notes ---\n${extractedData.notes}\nFile: ${file.name}\nProcessed: ${new Date().toLocaleString()}`;
+          setNotes(prevNotes => prevNotes + aiNotes);
+        }
+        
+        toast({
+          title: "Lab Report Successfully Processed",
+          description: `Extracted ${extractedData.extractedValues} parameters with ${extractedData.confidence} confidence. ${validatedParameters.filter(p => p.passed).length}/${validatedParameters.length} parameters passed quality thresholds.`,
+          variant: "default"
+        });
+
+        // Auto-save to draft if offline or if current draft exists
+        if (!isOnline || currentDraft) {
+          saveDraft({
+            readings: newReadings,
+            notes,
+            batchName: batch?.productName,
+            farmerName: batch?.farmerName
+          });
+        }
+      } else {
+        throw new Error('No valid parameters were extracted from the lab report');
+      }
+    } catch (error) {
+      console.error('File processing error:', error);
+      
+      let errorMessage = 'Failed to process the lab report. Please try again.';
+      
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      
+      toast({
+        title: "Lab Report Processing Failed",
+        description: errorMessage,
+        variant: "destructive"
+      });
+    } finally {
+      setIsProcessingAI(false);
+      // Clear the file input
+      if (event.target) {
+        event.target.value = '';
+      }
+    }
   };
 
   // Initialize with at least one reading if empty
@@ -472,7 +594,75 @@ export default function InspectionDetail() {
             currentDraft={currentDraft}
             draftStats={getDraftStats()}
             onExport={() => exportDraft()}
-            onImport={importDraft}
+            onImport={(file) => importDraft(file, async (file) => {
+              // Unified file handler - processes lab reports with AI
+              setUploadedFile(file);
+              setIsProcessingAI(true);
+
+              try {
+                // Validate file size (max 5MB)
+                if (file.size > 5 * 1024 * 1024) {
+                  throw new Error('File size must be less than 5MB');
+                }
+
+                const aiClient = getAIClient();
+                if (!aiClient) {
+                  throw new Error('AI service is not properly configured');
+                }
+                
+                // Extract text from file
+                const reportText = await extractTextFromFile(file);
+                
+                if (!reportText.trim()) {
+                  throw new Error('The uploaded file appears to be empty or contains no readable text');
+                }
+                
+                // Process with AI
+                const extractedData = await processLabReportWithAI(reportText, aiClient);
+                
+                // Validate and update readings with extracted parameters
+                if (extractedData.parameters && Array.isArray(extractedData.parameters)) {
+                  const validatedParameters = validateExtractedParameters(extractedData.parameters);
+                  
+                  const newReadings = validatedParameters.map((param: any) => ({
+                    parameter: param.parameter,
+                    value: param.value,
+                    unit: param.unit,
+                    minThreshold: param.minThreshold,
+                    maxThreshold: param.maxThreshold,
+                    passed: param.passed
+                  }));
+                  
+                  setReadings(newReadings);
+                  
+                  // Add AI processing notes if available
+                  if (extractedData.notes) {
+                    const aiNotes = `\n\n--- AI Extraction Notes ---\n${extractedData.notes}\nFile: ${file.name}\nProcessed: ${new Date().toLocaleString()}`;
+                    setNotes(prevNotes => prevNotes + aiNotes);
+                  }
+                  
+                  toast({
+                    title: "Lab Report Successfully Processed",
+                    description: `Extracted ${extractedData.extractedValues} parameters with ${extractedData.confidence} confidence. ${validatedParameters.filter(p => p.passed).length}/${validatedParameters.length} parameters passed quality thresholds.`,
+                    variant: "default"
+                  });
+
+                  // Auto-save to draft if offline or if current draft exists
+                  if (!isOnline || currentDraft) {
+                    saveDraft({
+                      readings: newReadings,
+                      notes,
+                      batchName: batch?.productName,
+                      farmerName: batch?.farmerName
+                    });
+                  }
+                } else {
+                  throw new Error('No valid parameters were extracted from the lab report');
+                }
+              } finally {
+                setIsProcessingAI(false);
+              }
+            })}
           />
           
           {(drafts.length > 0 || showDraftManager) && (
@@ -555,10 +745,71 @@ export default function InspectionDetail() {
                   <ClipboardCheck className="h-5 w-5" />
                   Quality Readings
                 </CardTitle>
-                <Button variant="outline" size="sm" onClick={addReading}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Reading
-                </Button>
+                <div className="flex items-center gap-2">
+                  <div className="relative">
+                    <input
+                      type="file"
+                      accept=".txt,.json,.pdf,.doc,.docx"
+                      onChange={handleFileUpload}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                      disabled={isProcessingAI}
+                      id="lab-report-upload"
+                    />
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      disabled={isProcessingAI}
+                      className="relative"
+                    >
+                      {isProcessingAI ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Processing...
+                        </>
+                      ) : (
+                        <>
+                          <Brain className="h-4 w-4 mr-2" />
+                          AI Extract
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={addReading}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Manual
+                  </Button>
+                </div>
+              </div>
+              {uploadedFile && (
+                <div className="flex items-center gap-2 mt-2 p-2 bg-muted rounded-lg">
+                  <Upload className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">
+                    Uploaded: {uploadedFile.name}
+                  </span>
+                  {isProcessingAI && (
+                    <div className="flex items-center gap-1 ml-auto">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      <span className="text-xs">Processing...</span>
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {/* AI Extraction Guide */}
+              <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-start gap-2">
+                  <Brain className="h-4 w-4 text-blue-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium text-blue-900">AI Lab Report Processing</p>
+                    <p className="text-xs text-blue-700 mt-1">
+                      Upload a lab report (.txt, .pdf, .json) to automatically extract Moisture Content, Temperature, and pH Level. 
+                      The AI will parse the report and populate readings with quality validation.
+                    </p>
+                    <p className="text-xs text-blue-600 mt-1">
+                      Supported formats: PDF files, Text files, JSON reports, or any readable lab document.
+                    </p>
+                  </div>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
