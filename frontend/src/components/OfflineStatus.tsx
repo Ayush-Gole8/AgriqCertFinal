@@ -26,7 +26,7 @@ interface OfflineStatusProps {
     conflicts: number;
   };
   onExport?: () => void;
-  onImport?: (file: File) => void;
+  onImport?: (file: File) => void | Promise<void>;
   className?: string;
 }
 
@@ -44,10 +44,10 @@ export function OfflineStatus({
     fileInputRef.current?.click();
   };
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file && onImport) {
-      onImport(file);
+      await onImport(file);
       // Reset input
       event.target.value = '';
     }
@@ -170,17 +170,18 @@ export function OfflineStatus({
               variant="outline"
               onClick={handleImportClick}
               className="flex-1 text-xs"
+              title="Import draft JSON or upload lab report (PDF/TXT) for AI processing"
             >
               <Upload className="h-3 w-3 mr-1" />
-              Import Draft
+              Import / Upload
             </Button>
           </div>
 
-          {/* Hidden file input */}
+          {/* Hidden file input - accepts both JSON drafts and lab reports (PDF, TXT) */}
           <input
             ref={fileInputRef}
             type="file"
-            accept=".json"
+            accept=".json,.pdf,.txt,.doc,.docx"
             onChange={handleFileChange}
             className="hidden"
           />

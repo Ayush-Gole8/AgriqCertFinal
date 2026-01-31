@@ -145,16 +145,60 @@ export function useOfflineInspection(batchId?: string) {
     });
   }, [currentDraft, toast]);
 
-  // Import draft from JSON
-  const importDraft = useCallback((file: File) => {
+  // Import draft from JSON or process lab reports with AI
+  const importDraft = useCallback(async (file: File, onProcessLabReport?: (file: File) => Promise<void>) => {
+    // Check if it's a PDF or other lab report file
+    const isPDF = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+    const isLabReport = isPDF || 
+      file.name.toLowerCase().includes('lab') || 
+      file.name.toLowerCase().includes('report') ||
+      file.type === 'text/plain' ||
+      file.name.toLowerCase().endsWith('.txt');
+    
+    // If it's a lab report and we have the AI processing callback, process it automatically
+    if ((isPDF || isLabReport) && onProcessLabReport) {
+      try {
+        // The onProcessLabReport function will handle its own toast notifications
+        await onProcessLabReport(file);
+        return;
+      } catch (error) {
+        console.error('Lab report processing error:', error);
+        // Error toast is already shown by the processing function
+        return;
+      }
+    }
+    
+    // If it's a lab report but no AI processor available, show helpful message
+    if (isPDF || isLabReport) {
+      toast({
+        title: "Lab Report Detected",
+        description: "Please use the 'AI Extract' button in the Quality Readings section to process lab reports with AI.",
+        variant: "default"
+      });
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
         const content = e.target?.result as string;
-        const importData = JSON.parse(content);
+        
+        // Validate JSON format
+        let importData;
+        try {
+          importData = JSON.parse(content);
+        } catch (parseError) {
+          throw new Error('File is not a valid JSON format. Please select a valid inspection draft file.');
+        }
 
+        // Validate inspection draft structure
         if (!importData.inspection || !importData.version) {
-          throw new Error('Invalid file format');
+          throw new Error('Invalid inspection draft format. Please select a file exported from this application.');
+        }
+
+        // Additional validation for required fields
+        if (!importData.inspection.batchId || !importData.inspection.readings) {
+          throw new Error('Incomplete inspection draft data. Please select a valid inspection draft file.');
         }
 
         const importedDraft: OfflineInspectionDraft = {
@@ -172,27 +216,45 @@ export function useOfflineInspection(batchId?: string) {
           const updatedDrafts = [...drafts];
           updatedDrafts[existingIndex] = importedDraft;
           saveDrafts(updatedDrafts);
+          
+          toast({
+            title: "Draft Replaced",
+            description: `Replaced existing draft for batch ${importedDraft.batchId}`,
+            variant: "default"
+          });
         } else {
           // Add new draft
           saveDrafts([...drafts, importedDraft]);
+          
+          toast({
+            title: "Import Successful",
+            description: `Imported inspection draft for batch ${importedDraft.batchId}`,
+            variant: "default"
+          });
         }
 
         setCurrentDraft(importedDraft);
 
-        toast({
-          title: "Import Successful",
-          description: `Imported inspection draft for batch ${importedDraft.batchId}`,
-          variant: "default"
-        });
       } catch (error) {
         console.error('Import error:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Invalid file format or corrupted data.';
         toast({
           title: "Import Failed",
-          description: "Invalid file format or corrupted data.",
+          description: errorMessage,
           variant: "destructive"
         });
       }
     };
+    
+    reader.onerror = (error) => {
+      console.error('File read error:', error);
+      toast({
+        title: "File Read Error",
+        description: "Unable to read the selected file. Please try again.",
+        variant: "destructive"
+      });
+    };
+    
     reader.readAsText(file);
   }, [drafts, saveDrafts, toast]);
 
