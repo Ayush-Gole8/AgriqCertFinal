@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Search, QrCode, FileText, Camera, AlertCircle, CheckCircle, X } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -12,29 +12,37 @@ import { AppShell } from '@/components/layout/AppShell';
 import { useVerify as useVerifyVC } from '@/hooks/useVerify';
 import { useToast } from '@/hooks/use-toast';
 import type { VerifyVCResult } from '@/types/api';
+import { apiClient } from '@/api/apiClient';
 
 export default function Verify() {
+  const { id } = useParams<{ id: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const [certId, setCertId] = useState('');
   const [verificationResult, setVerificationResult] = useState<VerifyVCResult | null>(null);
   const [activeTab, setActiveTab] = useState('search');
+  const [isLoading, setIsLoading] = useState(false);
   
   const verifyVC = useVerifyVC();
   const { toast } = useToast();
   
-  // Check for QR parameter on mount
+  // Check for id parameter from URL or QR/cert params on mount
   useEffect(() => {
-    const qrParam = searchParams.get('qr');
-    const certParam = searchParams.get('cert');
-    
-    if (qrParam) {
-      setActiveTab('qr');
-      handleVerifyQR(qrParam);
-    } else if (certParam) {
-      setCertId(certParam);
-      handleSearchById(certParam);
+    // Priority: URL id param > cert query param > qr query param
+    if (id) {
+      handleVerifyById(id);
+    } else {
+      const qrParam = searchParams.get('qr');
+      const certParam = searchParams.get('cert');
+      
+      if (qrParam) {
+        setActiveTab('qr');
+        handleVerifyQR(qrParam);
+      } else if (certParam) {
+        setCertId(certParam);
+        handleSearchById(certParam);
+      }
     }
-  }, [searchParams]);
+  }, [id, searchParams]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,55 +51,71 @@ export default function Verify() {
     }
   };
 
-  const handleSearchById = async (id: string) => {
+  const handleVerifyById = async (certificateId: string) => {
     try {
+      setIsLoading(true);
       setVerificationResult(null);
+      setActiveTab('result');
       
-      // First try to get the certificate by ID
-      const certResponse = await fetch(`/api/vc/certificates/${id}`);
-      if (certResponse.ok) {
-        const certData = await certResponse.json();
-        const certificate = certData.data;
-        
-        // Verify the certificate's VC
-        const result = await verifyVC.mutateAsync({
-          vcJson: certificate.vc
-        });
-        
-        setVerificationResult({
-          ...result,
-          certificateId: certificate.id,
-        });
-      } else {
-        // Certificate not found
-        setVerificationResult({
-          valid: false,
-          signatureValid: false,
-          revoked: false,
-          issuer: '',
-          issuanceDate: '',
-          credentialSubject: {},
-          details: 'Certificate not found',
-          locallyVerified: true,
-          revocationChecked: true,
-          errors: ['Certificate with this ID does not exist'],
-        });
-      }
-    } catch (error) {
+      // Use the public verification endpoint
+      const response = await apiClient.get(`/vc/verify/public/${certificateId}`);
+      const data = response.data.data;
+      
+      // Transform the response to match VerifyVCResult format
+      setVerificationResult({
+        valid: data.verification.valid,
+        signatureValid: data.verification.signatureValid,
+        revoked: data.verification.revoked,
+        expired: data.verification.expired,
+        issuer: data.certificate.issuer,
+        issuanceDate: data.certificate.issuedAt,
+        expirationDate: data.certificate.expiresAt,
+        credentialSubject: {
+          batchId: data.product.name,
+          productName: data.product.name,
+          productType: data.product.type,
+          quantity: data.product.quantity,
+          unit: data.product.unit,
+          farmerName: data.origin.farmer,
+          location: data.origin.location,
+          harvestDate: data.origin.harvestDate,
+          qualityReadings: data.quality?.readings || [],
+          qualitySummary: data.quality?.qualityReadings || null,
+        },
+        details: data.verification.valid 
+          ? 'Certificate is valid and authentic' 
+          : `Certificate verification failed: ${data.verification.revoked ? 'revoked' : ''} ${data.verification.expired ? 'expired' : ''} ${!data.verification.signatureValid ? 'invalid signature' : ''}`.trim(),
+        locallyVerified: true,
+        revocationChecked: true,
+        certificateId: data.certificate.id,
+      });
+    } catch (error: any) {
       console.error('Verification failed:', error);
       setVerificationResult({
         valid: false,
         signatureValid: false,
         revoked: false,
+        expired: false,
         issuer: '',
         issuanceDate: '',
         credentialSubject: {},
-        details: 'Verification failed',
+        details: error.response?.data?.message || 'Verification failed',
         locallyVerified: true,
         revocationChecked: false,
-        errors: ['Failed to verify certificate'],
+        errors: [error.response?.data?.message || 'Failed to verify certificate'],
       });
+      toast({
+        title: 'Verification Failed',
+        description: error.response?.data?.message || 'Failed to verify certificate',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
     }
+  };
+
+  const handleSearchById = async (id: string) => {
+    await handleVerifyById(id);
   };
 
   const handleVerifyQR = async (qrData: string) => {
@@ -122,7 +146,28 @@ export default function Verify() {
 
   const handleQRScanSuccess = (result: string) => {
     setActiveTab('result');
-    handleVerifyQR(result);
+    try {
+      // Try to parse QR data as JSON
+      const qrData = JSON.parse(result);
+      if (qrData.type === 'AgriQCert' && qrData.certId) {
+        // If QR contains certId, use the public verification endpoint
+        handleVerifyById(qrData.certId);
+      } else if (qrData.verifyUrl) {
+        // Extract certificate ID from verify URL
+        const urlParts = qrData.verifyUrl.split('/');
+        const certIdFromUrl = urlParts[urlParts.length - 1];
+        if (certIdFromUrl) {
+          handleVerifyById(certIdFromUrl);
+        } else {
+          handleVerifyQR(result);
+        }
+      } else {
+        handleVerifyQR(result);
+      }
+    } catch {
+      // If not JSON, try as direct verification
+      handleVerifyQR(result);
+    }
   };
 
   const handleDemoQR = async () => {
@@ -192,9 +237,9 @@ export default function Verify() {
                   <Button 
                     type="submit" 
                     className="w-full"
-                    disabled={!certId.trim() || verifyVC.isPending}
+                    disabled={!certId.trim() || isLoading}
                   >
-                    {verifyVC.isPending ? 'Verifying...' : 'Verify Certificate'}
+                    {isLoading ? 'Verifying...' : 'Verify Certificate'}
                   </Button>
                 </form>
 
@@ -234,10 +279,10 @@ export default function Verify() {
                 <Button 
                   variant="outline" 
                   onClick={handleDemoQR}
-                  disabled={verifyVC.isPending}
+                  disabled={isLoading}
                 >
                   <QrCode className="h-4 w-4 mr-2" />
-                  {verifyVC.isPending ? 'Processing...' : 'Try Demo QR Code'}
+                  {isLoading ? 'Processing...' : 'Try Demo QR Code'}
                 </Button>
                 <p className="text-xs text-muted-foreground mt-2">
                   Simulates scanning a certificate QR code

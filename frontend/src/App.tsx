@@ -66,6 +66,9 @@ function AppRoutes() {
       <Route path="/login" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Login />} />
       <Route path="/login/:role" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Login />} />
       <Route path="/" element={<Index />} />
+      {/* Public verification routes */}
+      <Route path="/verify" element={<Verify />} />
+      <Route path="/verify/:id" element={<Verify />} />
       {/* Generic routes */}
       <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
@@ -76,7 +79,6 @@ function AppRoutes() {
       <Route path="/inspect/:id" element={<ProtectedRoute><InspectionDetail /></ProtectedRoute>} />
       <Route path="/certificates" element={<ProtectedRoute><Certificates /></ProtectedRoute>} />
       <Route path="/certificates/:id" element={<ProtectedRoute><CertificateDetail /></ProtectedRoute>} />
-      <Route path="/verify" element={<ProtectedRoute><Verify /></ProtectedRoute>} />
       <Route path="/developers" element={<ProtectedRoute><Developers /></ProtectedRoute>} />
 
       {/* Farmer routes */}
@@ -273,16 +275,6 @@ function AppRoutes() {
           <ProtectedRoute>
             <RoleRoute allowed={["verifier"]}>
               <Dashboard />
-            </RoleRoute>
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/verifier/verify"
-        element={
-          <ProtectedRoute>
-            <RoleRoute allowed={["verifier"]}>
-              <Verify />
             </RoleRoute>
           </ProtectedRoute>
         }

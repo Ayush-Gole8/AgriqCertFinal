@@ -1,8 +1,11 @@
 import { IssuanceJob, Certificate, Revocation, Batch, Inspection, Notification } from '../models/index.js';
 import { verifyService } from './verify.service.js';
-import type { WebhookPayload } from './injiClient.service.js';
 import { AppError } from '../middleware/errorHandler.middleware.js';
 import { UserRole } from '../types/index.js';
+import jwt from 'jsonwebtoken';
+import config from '../config/config.js';
+import crypto from 'crypto';
+import QRCode from 'qrcode';
 
 interface AuthUser {
     userId: string;
@@ -46,11 +49,101 @@ interface RevokeCertificateInput {
     userAgent?: string | null;
 }
 
-interface HandleWebhookInput {
-    payload: WebhookPayload;
-}
 
 export class VCService {
+    /**
+     * Generate a self-signed W3C Verifiable Credential
+     */
+    private static generateInternalVC(
+        batch: any,
+        inspection: any | null,
+        issuerId: string
+    ): { vc: any; vcHash: string } {
+        const issuanceDate = new Date().toISOString();
+        const expirationDate = new Date();
+        expirationDate.setDate(expirationDate.getDate() + config.features.vc.defaultExpiryDays);
+        const expirationDateISO = expirationDate.toISOString();
+
+        // Build credential subject with batch and inspection data
+        const credentialSubject: any = {
+            id: `did:agriqcert:batch:${batch.id}`,
+            batchId: batch.id.toString(),
+            productName: batch.productName,
+            productType: batch.productType,
+            quantity: batch.quantity,
+            unit: batch.unit,
+            harvestDate: batch.harvestDate.toISOString(),
+            farmerName: batch.farmerName,
+            location: {
+                address: batch.location.address,
+                region: batch.location.region,
+                country: batch.location.country || '',
+            },
+        };
+
+        // Add inspection readings if available
+        if (inspection && inspection.readings && inspection.readings.length > 0) {
+            credentialSubject.qualityReadings = inspection.readings.map((reading: any) => ({
+                parameter: reading.parameter,
+                value: reading.value,
+                unit: reading.unit,
+                passed: reading.passed,
+            }));
+
+            // Add quality reading summary if available
+            if (inspection.qualityReadings) {
+                credentialSubject.qualitySummary = {
+                    moisturePercent: inspection.qualityReadings.moisturePercent,
+                    pesticidePPM: inspection.qualityReadings.pesticidePPM,
+                    temperatureC: inspection.qualityReadings.temperatureC,
+                    isOrganic: inspection.qualityReadings.isOrganic,
+                };
+            }
+        }
+
+        // Build the VC object (without proof first for signing)
+        const vcWithoutProof = {
+            '@context': ['https://www.w3.org/2018/credentials/v1'],
+            type: ['VerifiableCredential', 'AgricultureQualityCertificate'],
+            issuer: config.features.vc.issuerDid,
+            issuanceDate,
+            expirationDate: expirationDateISO,
+            credentialSubject,
+        };
+
+        // Sign the VC using JWT_SECRET
+        const vcString = JSON.stringify(vcWithoutProof);
+        const signature = jwt.sign(
+            { vc: vcString },
+            config.jwt.secret!,
+            {
+                expiresIn: `${config.features.vc.defaultExpiryDays}d`,
+                issuer: 'agriqcert-api',
+                audience: 'agriqcert-vc',
+            }
+        );
+
+        // Compute VC hash for revocation tracking
+        const vcHash = crypto
+            .createHash('sha256')
+            .update(vcString)
+            .digest('hex');
+
+        // Add proof to VC
+        const vc = {
+            ...vcWithoutProof,
+            proof: {
+                type: 'JwtProof2020',
+                created: issuanceDate,
+                verificationMethod: `${config.features.vc.issuerDid}#key-1`,
+                proofPurpose: 'assertionMethod',
+                jws: signature,
+            },
+        };
+
+        return { vc, vcHash };
+    }
+
     static async issueVC(input: IssueVCInput) {
         const { batchId, inspectionId, user } = input;
 
@@ -80,35 +173,73 @@ export class VCService {
             throw new AppError(409, 'Certificate already exists for this batch');
         }
 
-        const existingJob = await IssuanceJob.findOne({
-            batchId,
-            status: { $in: ['pending', 'processing'] },
+        // Generate the VC synchronously
+        const { vc, vcHash } = this.generateInternalVC(batch, inspection, user.userId);
+
+        // QR code data will be set after certificate creation
+
+        // Create certificate directly (synchronously)
+        const certificate = await Certificate.create({
+            batchId: batch.id,
+            vc,
+            vcHash,
+            qrCodeData: '', // Will be updated after creation
+            status: 'active',
+            revoked: false,
+            issuedBy: user.userId,
+            issuedAt: new Date(),
+            expiresAt: new Date(vc.expirationDate),
         });
 
-        if (existingJob) {
-            return {
-                job: existingJob,
-                created: false,
-            };
+        // Update QR code data with actual certificate ID
+        // Use window.location.origin format for frontend URL
+        const baseUrl = process.env.FRONTEND_URL || config.features.qr.baseUrl || 'http://localhost:5173';
+        const verifyUrl = `${baseUrl}/verify/${certificate.id}`;
+        const updatedQrCodeData = JSON.stringify({
+            type: 'AgriQCert',
+            certId: certificate.id,
+            verifyUrl,
+        });
+
+        // Generate QR code image
+        let qrCodeImage: string | undefined;
+        try {
+            qrCodeImage = await QRCode.toDataURL(updatedQrCodeData, {
+                errorCorrectionLevel: 'M',
+                type: 'image/png',
+                width: 300,
+            });
+        } catch (error) {
+            console.error('[VCService] Failed to generate QR code image:', error);
         }
 
-        const job = await IssuanceJob.create({
-            batchId,
-            inspectionId,
-            status: 'pending',
-            payload: {
-                requestedBy: user.userId,
-                requestedAt: new Date(),
-                batchData: {
-                    id: batch.id,
-                    productType: batch.productType,
-                    productName: batch.productName,
-                },
+        // Update certificate with QR code data
+        certificate.qrCodeData = updatedQrCodeData;
+        if (qrCodeImage) {
+            certificate.qrCodeImage = qrCodeImage;
+        }
+        await certificate.save();
+
+        // Update batch status
+        batch.status = 'certified';
+        batch.certifiedAt = new Date();
+        await batch.save();
+
+        // Create notification for farmer
+        await Notification.create({
+            userId: batch.farmerId,
+            type: 'certificate_issued',
+            title: 'Certificate Issued',
+            message: `Your certificate for batch ${batch.id} (${batch.productName}) has been issued successfully.`,
+            data: {
+                certificateId: certificate.id,
+                batchId: batch.id,
             },
+            priority: 'high',
         });
 
         return {
-            job,
+            certificate,
             created: true,
         };
     }
@@ -190,7 +321,6 @@ export class VCService {
 
         const revocation = await Revocation.create({
             certificateId: certificate.id,
-            providerVcId: certificate.providerVcId,
             vcHash: certificate.vcHash,
             revokedBy: user.userId,
             reason,
@@ -223,82 +353,109 @@ export class VCService {
         };
     }
 
-    static async handleWebhook(input: HandleWebhookInput) {
-        const { payload } = input;
+    /**
+     * Verify a certificate's signature internally
+     */
+    static async verifyCertificateSignature(certificate: any): Promise<boolean> {
+        try {
+            if (!certificate.vc || !certificate.vc.proof || !certificate.vc.proof.jws) {
+                return false;
+            }
 
-        switch (payload.status) {
-            case 'issued':
-                await VCService.handleIssuedWebhook(payload);
-                break;
-            case 'revoked':
-                await VCService.handleRevokedWebhook(payload);
-                break;
-            case 'expired':
-                await VCService.handleExpiredWebhook(payload);
-                break;
-            default:
-                console.warn('[VCService] Unknown webhook status:', payload.status);
-        }
-    }
+            const proof = certificate.vc.proof;
+            const vcWithoutProof = { ...certificate.vc };
+            delete vcWithoutProof.proof;
 
-    private static async handleIssuedWebhook(payload: WebhookPayload): Promise<void> {
-        const certificate = await Certificate.findOne({ providerVcId: payload.vcId });
-        if (certificate && certificate.status !== 'active') {
-            certificate.status = 'active';
-            certificate.metadata = {
-                ...certificate.metadata,
-                webhookReceived: {
-                    status: 'issued',
-                    timestamp: payload.timestamp,
-                },
-            };
-            await certificate.save();
-        }
-    }
-
-    private static async handleRevokedWebhook(payload: WebhookPayload): Promise<void> {
-        const certificate = await Certificate.findOne({ providerVcId: payload.vcId });
-        if (certificate && !certificate.revoked) {
-            certificate.revoked = true;
-            certificate.status = 'revoked';
-            certificate.revokedAt = new Date(payload.timestamp);
-            certificate.revocationReason = 'provider_revoked';
-            certificate.metadata = {
-                ...certificate.metadata,
-                webhookReceived: {
-                    status: 'revoked',
-                    timestamp: payload.timestamp,
-                },
-            };
-            await certificate.save();
-
-            await Revocation.create({
-                certificateId: certificate.id,
-                providerVcId: certificate.providerVcId,
-                vcHash: certificate.vcHash,
-                revokedBy: 'system',
-                reason: 'provider_revoked',
-                metadata: {
-                    source: 'inji_webhook',
-                    originalPayload: payload,
-                },
+            // Verify JWT signature
+            const decoded = jwt.verify(proof.jws, config.jwt.secret!, {
+                issuer: 'agriqcert-api',
+                audience: 'agriqcert-vc',
             });
+
+            // Verify the payload matches the VC
+            const vcString = JSON.stringify(vcWithoutProof);
+            if ((decoded as any).vc !== vcString) {
+                return false;
+            }
+
+            return true;
+        } catch (error) {
+            console.error('[VCService] Signature verification failed:', error);
+            return false;
         }
     }
 
-    private static async handleExpiredWebhook(payload: WebhookPayload): Promise<void> {
-        const certificate = await Certificate.findOne({ providerVcId: payload.vcId });
-        if (certificate) {
-            certificate.status = 'expired';
-            certificate.metadata = {
-                ...certificate.metadata,
-                webhookReceived: {
-                    status: 'expired',
-                    timestamp: payload.timestamp,
-                },
-            };
-            await certificate.save();
+    /**
+     * Get public verification data (Farm-to-Table summary)
+     */
+    static async getPublicVerificationData(certificateId: string) {
+        const certificate = await Certificate.findById(certificateId)
+            .populate('batchId', 'productType productName quantity unit farmerId farmerName location harvestDate')
+            .populate('issuedBy', 'name email role');
+
+        if (!certificate) {
+            throw new AppError(404, 'Certificate not found');
         }
+
+        // Verify signature
+        const signatureValid = await this.verifyCertificateSignature(certificate);
+
+        // Check revocation
+        const isRevoked = certificate.revoked || certificate.status === 'revoked';
+
+        // Check expiration
+        const isExpired = certificate.expiresAt ? certificate.expiresAt < new Date() : false;
+
+        // Get inspection data if available
+        let inspection = null;
+        if (certificate.batchId) {
+            inspection = await Inspection.findOne({ batchId: certificate.batchId })
+                .select('readings qualityReadings overallResult completedAt')
+                .sort({ createdAt: -1 })
+                .limit(1);
+        }
+
+        // Build Farm-to-Table summary
+        const batch = certificate.batchId as any;
+        const summary = {
+            certificate: {
+                id: certificate.id,
+                status: certificate.status,
+                issuedAt: certificate.issuedAt,
+                expiresAt: certificate.expiresAt,
+                issuer: certificate.issuedBy ? (certificate.issuedBy as any).name : 'AgriQCert',
+            },
+            product: {
+                name: batch?.productName || 'Unknown',
+                type: batch?.productType || 'Unknown',
+                quantity: batch?.quantity || 0,
+                unit: batch?.unit || 'kg',
+            },
+            origin: {
+                farmer: batch?.farmerName || 'Unknown',
+                location: batch?.location ? {
+                    address: batch.location.address,
+                    region: batch.location.region,
+                    country: batch.location.country || '',
+                } : null,
+                harvestDate: batch?.harvestDate || null,
+            },
+            quality: inspection ? {
+                overallResult: inspection.overallResult,
+                readings: inspection.readings || [],
+                qualityReadings: inspection.qualityReadings || null,
+                inspectedAt: inspection.completedAt || null,
+            } : null,
+            verification: {
+                valid: signatureValid && !isRevoked && !isExpired,
+                signatureValid,
+                revoked: isRevoked,
+                expired: isExpired,
+                verifiedAt: new Date().toISOString(),
+            },
+        };
+
+        return summary;
     }
 
     static async getVCStats() {

@@ -3,7 +3,6 @@ import { VCController } from '../controllers/vc.controller.js';
 import { authenticate, authorize } from '../middleware/auth.middleware.js';
 import { validateSchema } from '../validators/requestValidation.validator.js';
 import { validateObjectId } from '../validators/mongoValidation.validator.js';
-import { verifyInjiSignature } from '../middleware/webhook.middleware.js';
 import {
   issueVCSchema,
   verifyVCSchema,
@@ -59,16 +58,15 @@ router.get('/stats',
 
 // Public endpoints (no auth required)
 
-
 router.post('/verify',
   validateSchema(verifyVCSchema),
   VCController.verifyVC
 );
 
-// Webhook endpoint with signature verification
-router.post('/webhook',
-  verifyInjiSignature,
-  VCController.handleWebhook
+// Public verification endpoint (no auth required)
+router.get('/verify/public/:certificateId',
+  validateObjectId('certificateId'),
+  VCController.verifyPublic
 );
 
 export default router;
