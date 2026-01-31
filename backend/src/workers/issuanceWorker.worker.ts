@@ -20,20 +20,12 @@ class IssuanceWorker {
 
   /**
    * Start the worker
+   * DISABLED: VC issuance is now synchronous, no background worker needed
    */
   async start(): Promise<void> {
-    if (this.isRunning) {
-      console.log('[IssuanceWorker] Already running');
-      return;
-    }
-
-    console.log(`[IssuanceWorker] Starting with poll interval: ${this.pollInterval}ms, concurrency: ${this.maxConcurrency}`);
-
-    // Ensure database connection
-    await database.connect();
-
-    this.isRunning = true;
-    this.poll();
+    console.log('[IssuanceWorker] Worker is disabled - VC issuance is now synchronous');
+    // Worker is disabled - VC issuance happens synchronously in VCService.issueVC
+    return;
   }
 
   /**

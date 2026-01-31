@@ -1,7 +1,6 @@
 import { Request, Response } from 'express';
 import { asyncHandler } from '../middleware/errorHandler.middleware.js';
 import { AppError } from '../middleware/errorHandler.middleware.js';
-import { injiClient } from '../services/injiClient.service.js';
 import { VCService } from '../services/vc.service.js';
 
 export class VCController {
@@ -16,34 +15,21 @@ export class VCController {
       throw new AppError(401, 'Authentication required');
     }
 
-    const { job, created } = await VCService.issueVC({
+    const { certificate, created } = await VCService.issueVC({
       batchId,
       inspectionId,
       user: req.user,
     });
 
-    if (!created) {
-      res.status(202).json({
-        success: true,
-        message: 'Issuance job already queued',
-        data: {
-          jobId: job.id,
-          status: job.status,
-          createdAt: job.createdAt,
-        },
-      });
-      return;
-    }
-
-    res.status(202).json({
+    res.status(201).json({
       success: true,
-      message: 'Issuance job queued successfully',
+      message: 'Certificate issued successfully',
       data: {
-        jobId: job.id,
-        status: job.status,
-        batchId,
-        inspectionId,
-        createdAt: job.createdAt,
+        certificateId: certificate.id,
+        batchId: certificate.batchId,
+        status: certificate.status,
+        qrCodeData: certificate.qrCodeData,
+        issuedAt: certificate.issuedAt,
       },
     });
   });
@@ -231,46 +217,22 @@ export class VCController {
   });
 
   /**
-   * Handle Inji webhook
-   * POST /api/vc/webhook
-   * Note: Raw body parser and signature verification handled by webhook.middleware
+   * Public verification endpoint (no auth required)
+   * GET /api/vc/verify/public/:certificateId
    */
-  static handleWebhook = asyncHandler(async (req: Request, res: Response) => {
-    try {
-      // req.body contains parsed JSON (middleware verified signature)
-      const { event, data, timestamp } = req.body;
+  static verifyPublic = asyncHandler(async (req: Request, res: Response) => {
+    const { certificateId } = req.params;
 
-      if (!event || !data) {
-        throw new AppError(400, 'Invalid webhook payload: missing event or data');
-      }
-
-      // Route to appropriate handler
-      const { routeWebhookEvent } = await import('../services/webhook.handlers.js');
-      
-      await routeWebhookEvent(event, {
-        event,
-        timestamp,
-        data,
-      });
-
-      // Mark webhook as processed
-      const webhookId = req.headers['x-webhook-id'] as string;
-      if (webhookId) {
-        const { WebhookLog } = await import('../models/webhookLog.model.js');
-        const webhookLog = await WebhookLog.findOne({ webhookId });
-        if (webhookLog) {
-          await webhookLog.markAsProcessed();
-        }
-      }
-
-      res.json({
-        success: true,
-        message: 'Webhook processed successfully',
-      });
-    } catch (error) {
-      console.error('[VCController] Webhook processing failed:', error);
-      throw new AppError(400, 'Webhook processing failed');
+    if (!certificateId) {
+      throw new AppError(400, 'Certificate ID is required');
     }
+
+    const summary = await VCService.getPublicVerificationData(certificateId);
+
+    res.json({
+      success: true,
+      data: summary,
+    });
   });
 
   /**
