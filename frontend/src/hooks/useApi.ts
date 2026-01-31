@@ -142,7 +142,20 @@ export function useCompleteInspection() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: ({ id, data }: { id: string; data: { passed: boolean; comments?: string; readings?: unknown[] } }) => 
+    mutationFn: ({ id, data }: { 
+      id: string; 
+      data: {
+        readings?: Record<string, unknown>[];
+        notes?: string;
+        overallResult?: string;
+        outcome?: {
+          classification: string;
+          reasoning: string;
+          followUpRequired: boolean;
+          complianceNotes?: string;
+        };
+      }
+    }) => 
       api.inspections.complete(id, data),
     onSuccess: (_, { id }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.inspections });
@@ -176,6 +189,7 @@ export function useIssueCertificate() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.certificates });
       queryClient.invalidateQueries({ queryKey: queryKeys.batches });
+      queryClient.invalidateQueries({ queryKey: queryKeys.vcJobs });
     },
   });
 }

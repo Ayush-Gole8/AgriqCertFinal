@@ -112,6 +112,12 @@ export const updateInspectionSchema = z.object({
   })).optional(),
   photos: z.array(z.string()).optional(),
   notes: z.string().max(2000).optional(),
+  outcome: z.object({
+    classification: z.enum(['pass', 'fail', 'conditional_pass', 'requires_retest']),
+    reasoning: z.string().max(2000),
+    recommendations: z.string().max(500).optional(),
+    followUpRequired: z.boolean().optional(),
+  }).optional(),
 });
 
 export const inspectionQuerySchema = z.object({

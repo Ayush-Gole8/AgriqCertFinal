@@ -4,6 +4,7 @@ import batchRoutes from './batch.routes.js';
 import inspectionRoutes from './inspection.routes.js';
 import fileRoutes from './files.routes.js';
 import vcRoutes from './vc.routes.js';
+import walletRoutes from './wallet.routes.js';
 import healthRoutes from './health.routes.js';
 import { authenticate, authorize } from '../middleware/auth.middleware.js';
 import { VCController } from '../controllers/vc.controller.js';
@@ -16,6 +17,7 @@ router.use('/batches', batchRoutes);
 router.use('/inspections', inspectionRoutes);
 router.use('/files', fileRoutes);
 router.use('/vc', vcRoutes);
+router.use('/wallet', walletRoutes);
 router.use('/health', healthRoutes);
 
 router.get(

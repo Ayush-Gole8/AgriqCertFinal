@@ -233,18 +233,35 @@ export class VCController {
   /**
    * Handle Inji webhook
    * POST /api/vc/webhook
+   * Note: Raw body parser and signature verification handled by webhook.middleware
    */
   static handleWebhook = asyncHandler(async (req: Request, res: Response) => {
-    const signature = req.headers['x-inji-signature'] as string;
-
-    if (!signature) {
-      throw new AppError(400, 'Missing webhook signature');
-    }
-
     try {
-      const payload = injiClient.parseWebhook(JSON.stringify(req.body), signature);
+      // req.body contains parsed JSON (middleware verified signature)
+      const { event, data, timestamp } = req.body;
 
-      await VCService.handleWebhook({ payload });
+      if (!event || !data) {
+        throw new AppError(400, 'Invalid webhook payload: missing event or data');
+      }
+
+      // Route to appropriate handler
+      const { routeWebhookEvent } = await import('../services/webhook.handlers.js');
+      
+      await routeWebhookEvent(event, {
+        event,
+        timestamp,
+        data,
+      });
+
+      // Mark webhook as processed
+      const webhookId = req.headers['x-webhook-id'] as string;
+      if (webhookId) {
+        const { WebhookLog } = await import('../models/webhookLog.model.js');
+        const webhookLog = await WebhookLog.findOne({ webhookId });
+        if (webhookLog) {
+          await webhookLog.markAsProcessed();
+        }
+      }
 
       res.json({
         success: true,
@@ -252,7 +269,7 @@ export class VCController {
       });
     } catch (error) {
       console.error('[VCController] Webhook processing failed:', error);
-      throw new AppError(400, 'Invalid webhook payload or signature');
+      throw new AppError(400, 'Webhook processing failed');
     }
   });
 

@@ -17,6 +17,8 @@ export interface IUser {
   resetPasswordExpires?: Date;
   lastLogin?: Date;
   refreshTokens: string[];
+  walletId?: string;
+  walletLinkedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -191,6 +193,16 @@ export interface ICertificate {
   revokedAt?: Date;
   revokedBy?: string;
   revocationReason?: string;
+  walletMetadata?: {
+    pushEnabled: boolean;
+    pushStatus: 'pending' | 'sent' | 'received' | 'failed';
+    pushAttempts: number;
+    lastPushAttempt?: Date;
+    walletDeeplink?: string;
+    walletUserId?: string;
+    pushError?: string;
+    receivedAt?: Date;
+  };
   metadata?: Record<string, any>;
   createdAt: Date;
   updatedAt: Date;

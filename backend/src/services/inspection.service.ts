@@ -112,6 +112,14 @@ export class InspectionService {
                     region: 'California',
                 }
                 : undefined,
+            // Provide default qualityReadings if not present (required by model)
+            qualityReadings: inspectionData.qualityReadings || {
+                moisturePercent: inspectionData.readings?.find((r: any) => r.parameter === 'moisture')?.value || 0,
+                pesticidePPM: 0,
+                temperatureC: 20,
+                isOrganic: batch.certifications?.includes('organic') || false,
+                physicalNotes: inspectionData.notes || 'Quality inspection completed',
+            },
         });
 
         await Batch.findByIdAndUpdate(batchId, { status: 'inspecting' });

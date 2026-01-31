@@ -12,7 +12,7 @@
     "dev:all": "concurrently --kill-others \"npm:dev\" \"npm:worker\"",
     "seed": "tsx src/scripts/seed.ts",
     "create-admin": "tsx src/scripts/createAdmin.ts",
-    "update-admin":"tsx src/scripts/updateAdmin.ts",
+    "update-admin": "tsx src/scripts/updateAdmin.ts",
     "test": "vitest",
     "test:coverage": "vitest --coverage",
     "lint": "eslint src --ext .ts",
@@ -63,6 +63,7 @@
     "eslint": "^9.32.0",
     "mongodb-memory-server": "^10.4.1",
     "prettier": "^3.5.2",
+    "qrcode-terminal": "^0.12.0",
     "tsx": "^4.19.2",
     "typescript": "^5.8.3",
     "vitest": "^4.0.17"

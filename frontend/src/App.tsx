@@ -23,6 +23,9 @@ import CertificateDetail from "./pages/certifier/CertificateDetail";
 import Verify from "./pages/verifier/Verify";
 import Developers from "./pages/Developers";
 import NotFound from "./pages/NotFound";
+import OfflineDemo from "./pages/OfflineDemo";
+import MobileInspection from "./pages/MobileInspection";
+import CertifierDashboard from "./pages/certifier/Dashboard";
 
 const queryClient = new QueryClient();
 
@@ -166,7 +169,7 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <RoleRoute allowed={["certifier"]}>
-              <Dashboard />
+              <CertifierDashboard />
             </RoleRoute>
           </ProtectedRoute>
         }
@@ -280,6 +283,31 @@ function AppRoutes() {
           <ProtectedRoute>
             <RoleRoute allowed={["verifier"]}>
               <Verify />
+            </RoleRoute>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Offline Demo Routes - Public for demo purposes */}
+      <Route path="/offline-demo" element={<OfflineDemo />} />
+      <Route 
+        path="/mobile-inspection/:id" 
+        element={
+          <ProtectedRoute>
+            <RoleRoute allowed={["qa_inspector", "admin"]}>
+              <MobileInspection />
+            </RoleRoute>
+          </ProtectedRoute>
+        } 
+      />
+      
+      {/* Enhanced Inspection routes */}
+      <Route
+        path="/inspection/:id"
+        element={
+          <ProtectedRoute>
+            <RoleRoute allowed={["qa_inspector", "admin"]}>
+              <InspectionDetail />
             </RoleRoute>
           </ProtectedRoute>
         }
